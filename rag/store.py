@@ -55,7 +55,8 @@ class VectorStore:
     def search(self, query: str, k: int = 5) -> list[Hit]:
         if len(self) == 0:
             return []
-        qv = self.embedder.embed([query])[0]
+        embed_query = getattr(self.embedder, "embed_query", None)
+        qv = embed_query(query) if embed_query else self.embedder.embed([query])[0]
         res = self._col.query(
             query_embeddings=[qv], n_results=min(k, len(self)), include=["documents", "metadatas", "distances"]
         )

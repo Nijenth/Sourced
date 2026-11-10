@@ -12,6 +12,9 @@ class Embedder(Protocol):
 
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
+    # Optional: providers that embed questions differently from documents also define
+    # embed_query(text) -> list[float]. VectorStore.search uses it when present.
+
 
 class ChatModel(Protocol):
     name: str  # provider name, e.g. "openai"
@@ -63,7 +66,11 @@ def friendly_error(service: str, exc: Exception) -> str:
     if "401" in text or "403" in text or "authentication" in low or "api key" in low or "permission" in low:
         return f"{service} rejected the API key. Check the key in your settings."
     if "429" in text or "rate limit" in low or "quota" in low or "resource_exhausted" in low:
+        if "perday" in low or "per day" in low or "daily" in low:
+            return f"{service}'s daily limit for this key is used up. It resets tomorrow, or use a paid key."
         return f"{service} is rate-limiting requests or the account is out of credit. Try again shortly."
+    if "503" in text or "unavailable" in low or "overloaded" in low or "500" in text:
+        return f"{service} is temporarily unavailable or overloaded. Try again in a moment."
     if "model" in low and ("not found" in low or "does not exist" in low or "404" in text):
         return f"{service} doesn't recognise the configured model. Check the model name in your settings."
     if "timeout" in low or "timed out" in low or "connection" in low or "connect" in low:

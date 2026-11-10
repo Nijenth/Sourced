@@ -3,6 +3,7 @@
 Contracts live in base.py. App code should use the registry functions rather than the classes.
 """
 from .anthropic_provider import ClaudeChat
+from .gemini_provider import GeminiChat, GeminiEmbedder
 from .base import ChatModel, Embedder, Provider, ProviderError, friendly_error
 from .openai_provider import OpenAIChat, OpenAIEmbedder
 from .registry import (
@@ -19,6 +20,8 @@ __all__ = [
     "ChatModel",
     "ClaudeChat",
     "Embedder",
+    "GeminiChat",
+    "GeminiEmbedder",
     "OpenAIChat",
     "OpenAIEmbedder",
     "PROVIDERS",

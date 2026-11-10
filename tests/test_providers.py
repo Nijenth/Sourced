@@ -54,8 +54,8 @@ def test_chat_only_provider_cannot_be_the_embedding_provider():
 
 def test_chat_provider_setting_goes_first():
     env = {**OPENAI, **ANTHROPIC}
-    assert chat_provider_names(env) == ["anthropic", "openai"]
-    assert chat_provider_names({**env, "CHAT_PROVIDER": "openai"}) == ["openai", "anthropic"]
+    assert chat_provider_names(env) == ["openai", "anthropic"]
+    assert chat_provider_names({**env, "CHAT_PROVIDER": "anthropic"}) == ["anthropic", "openai"]
 
 
 def test_models_come_from_settings():
@@ -87,3 +87,9 @@ def test_friendly_errors_hide_raw_details():
     assert "rejected the API key" in friendly_error("X", Exception("Error 401: invalid api key sk-123"))
     assert "rate-limiting" in friendly_error("X", Exception("429 Too Many Requests"))
     assert "sk-123" not in friendly_error("X", Exception("weird failure sk-123"))
+
+
+def test_friendly_errors_tell_daily_limits_and_outages_apart():
+    daily = Exception("429 RESOURCE_EXHAUSTED quotaId GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+    assert "daily limit" in friendly_error("X", daily)
+    assert "temporarily unavailable" in friendly_error("X", Exception("503 UNAVAILABLE: model overloaded"))

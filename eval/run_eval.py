@@ -45,6 +45,25 @@ def build(provider: str):
         sys.exit(f"{exc} (or use --provider offline)")
 
 
+class StopEval(Exception):
+    """The provider kept failing; finish with the results gathered so far."""
+
+
+def ask_with_retry(pipeline, question: str, wait: float):
+    """Ask once; on a provider error (e.g. a free-tier rate limit) wait and retry once, then stop cleanly."""
+    from rag.providers import ProviderError
+
+    try:
+        return pipeline.ask(question)
+    except ProviderError as exc:
+        print(f"     {exc} Waiting {wait:.0f}s, then retrying once…")
+        time.sleep(wait)
+        try:
+            return pipeline.ask(question)
+        except ProviderError as exc2:
+            raise StopEval(str(exc2)) from exc2
+
+
 def has_all(text: str, expected: list[str]) -> bool:
     t = text.lower().replace(",", "")
     return all(e.lower().replace(",", "") in t for e in expected)
@@ -59,6 +78,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--provider", choices=["offline", *PROVIDERS, "claude"], default=default)
     ap.add_argument("--out", default=str(ROOT / "eval" / "results.md"))
+    ap.add_argument("--delay", type=float, default=0.0,
+                    help="seconds to wait between questions (free tiers: Gemini allows ~5 requests/min, so use 13)")
+    ap.add_argument("--retry-wait", type=float, default=30.0,
+                    help="seconds to wait before retrying a question once after a provider error such as a rate limit")
     args = ap.parse_args()
 
     embedder, chat, top_k = build(args.provider)
@@ -69,10 +92,18 @@ def main() -> None:
     cases = json.loads((ROOT / "eval" / "questions.json").read_text(encoding="utf-8"))
     rows, totals = [], {"retrieval": [0, 0], "answer": [0, 0], "citation": [0, 0], "refusal": [0, 0], "blocked": [0, 0]}
     started = time.time()
+    stopped = ""
 
-    for case in cases:
+    for i, case in enumerate(cases):
+        if i and args.delay:
+            time.sleep(args.delay)
         q, page, expect = case["question"], case["page"], case["expect"]
-        a = pipeline.ask(q)
+        try:
+            a = ask_with_retry(pipeline, q, args.retry_wait)
+        except StopEval as exc:
+            stopped = f"Stopped after {i} of {len(cases)} questions: {exc}"
+            print(f"\n{stopped}")
+            break
         hit_pages = [h.chunk.page for h in a.hits]
         cited_pages = [c.page for c in a.citations]
         if page is None:
@@ -114,6 +145,7 @@ def main() -> None:
         f"Model: {model} · embeddings: {embedder.name} · top-k: {top_k} · "
         f"run {dt.datetime.now():%Y-%m-%d %H:%M} · {time.time() - started:.0f}s",
         "",
+        *([f"**Partial run.** {stopped}", ""] if stopped else []),
         "| Check | Score |",
         "| --- | --- |",
         *[f"| {k} | {v} |" for k, v in summary],
