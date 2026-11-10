@@ -21,6 +21,7 @@ try:  # On Streamlit Community Cloud, keys live in st.secrets. Copy them into th
 except Exception:
     pass
 
+from rag.citations import INVALID_OUTPUT, UNVERIFIED, snippet  # noqa: E402
 from rag.config import Settings, load_settings  # noqa: E402
 from rag.documents import PdfError, chunk_pages, count_pages, file_hash, load_pdf  # noqa: E402
 from rag.pipeline import RAGPipeline  # noqa: E402
@@ -219,6 +220,16 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
     st.markdown(md_escape(msg["content"]))
     if msg.get("error"):
         return
+    if msg.get("status") in ("unverified", "invalid_output"):
+        if msg.get("reason"):
+            st.caption(f"Why: {msg['reason']}")
+        for i, p in enumerate(msg.get("passages", []), 1):
+            with st.expander(f"{p['source']} · page {p['page']}"):
+                st.markdown("> " + md_escape(p["text"]))
+                data = files.get(p["source"])
+                if data and st.toggle("Show the page", key=f"passage-{idx}-{i}"):
+                    st.image(render_page(file_hash(data), p["page"], data), width="stretch")
+        return
     if not msg.get("found"):
         checked = sorted({(h["source"], h["page"]) for h in msg.get("checked", [])}, key=lambda x: (x[0], x[1]))
         if checked:
@@ -245,6 +256,13 @@ def answer_to_message(answer) -> dict:
         "role": "assistant",
         "content": answer.text,
         "found": answer.found,
+        "status": answer.status,
+        "reason": answer.reason,
+        "passages": [
+            {"source": h.chunk.source, "page": h.chunk.page, "text": snippet(h.chunk.text)} for h in answer.hits[:3]
+        ]
+        if answer.status in (UNVERIFIED, INVALID_OUTPUT)
+        else [],
         "citations": [
             {"number": c.number, "source": c.source, "page": c.page, "quote": c.quote, "verified": c.verified}
             for c in answer.citations

@@ -7,7 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from rag.citations import build_answer, locate_quote, parse_model_json
+from rag.citations import (
+    ANSWERED,
+    BLOCKED_TEXT,
+    INVALID_OUTPUT,
+    NOT_FOUND,
+    UNVERIFIED,
+    build_answer,
+    locate_quote,
+    numbers_in,
+    parse_model_json,
+)
 from rag.documents import Chunk, Page, PdfError, chunk_pages, load_pdf
 from rag.offline import HashingEmbedder, KeywordChat
 from rag.pipeline import NOT_FOUND_TEXT, RAGPipeline
@@ -96,35 +106,87 @@ def test_made_up_quote_is_rejected():
     assert locate_quote("Employees get unlimited paid vacation.", SOURCE) is None
 
 
-def test_answer_keeps_page_and_flags_unverified_quotes():
-    raw = json.dumps({
-        "found": True,
-        "answer": "You get 24 days [1]. Unlimited sick days [2].",
-        "citations": [{"source": 1, "quote": "Full-time employees get 24 days of paid annual leave each calendar year."},
-                      {"source": 2, "quote": "Unlimited sick days for everyone."}],
-    })
-    a = build_answer(raw, _hits(SOURCE, "Every employee gets 10 days of paid sick leave per calendar year."), "q")
-    assert a.found
-    assert [(c.number, c.page, c.verified) for c in a.citations] == [(1, 6, True), (2, 7, False)]
-    # An unverified quote is replaced by the source's own text, never shown as the model wrote it.
-    assert "Unlimited" not in a.citations[1].quote
+REAL_QUOTE = "Full-time employees get 24 days of paid annual leave each calendar year."
 
 
-def test_markers_for_missing_sources_are_dropped():
-    raw = json.dumps({"found": True, "answer": "Fact [1]. Other fact [7].", "citations": []})
+def _reply(answer, citations=None, found=True):
+    return json.dumps({"found": found, "answer": answer, "citations": citations or []})
+
+
+def test_quote_with_changed_digit_is_rejected():
+    assert locate_quote("Full-time employees get 42 days of paid annual leave each calendar year.", SOURCE) is None
+
+
+def test_numbers_are_normalised():
+    assert numbers_in("1,000 rupees, 09:30, twenty-four days, 2.50") >= {"1000", "9", "30", "24", "2.5"}
+    assert "1" not in numbers_in("one of the options", ignore_one=True)
+
+
+def test_valid_answer_passes():
+    raw = _reply("Full-time staff get 24 days of annual leave [1]. Leave builds up at two days a month [1].",
+                 [{"source": 1, "quote": REAL_QUOTE}])
     a = build_answer(raw, _hits(SOURCE), "q")
-    assert "[7]" not in a.text and [c.number for c in a.citations] == [1]
+    assert a.found and a.status == ANSWERED
+    assert [(c.number, c.page, c.verified) for c in a.citations] == [(1, 6, True)]
+
+
+def test_marker_after_full_stop_counts():
+    a = build_answer(_reply("You get 24 days. [1]", [{"source": 1, "quote": REAL_QUOTE}]), _hits(SOURCE), "q")
+    assert a.status == ANSWERED
+
+
+def test_sentence_without_numbers_needs_no_marker():
+    raw = _reply("You get 24 days [1]. The handbook doesn't mention contractors.", [{"source": 1, "quote": REAL_QUOTE}])
+    assert build_answer(raw, _hits(SOURCE), "q").status == ANSWERED
+
+
+def test_real_quote_with_wrong_number_in_answer_is_blocked():
+    # The citation is genuine, but the claim beside it is false.
+    a = build_answer(_reply("You get 42 days [1].", [{"source": 1, "quote": REAL_QUOTE}]), _hits(SOURCE), "q")
+    assert not a.found and a.status == UNVERIFIED and a.citations == []
+    assert a.text == BLOCKED_TEXT and "42" in a.reason
+
+
+def test_fabricated_quote_blocks_the_whole_answer():
+    raw = _reply("You get 24 days [1]. Unlimited sick days [2].",
+                 [{"source": 1, "quote": REAL_QUOTE}, {"source": 2, "quote": "Unlimited sick days for everyone."}])
+    a = build_answer(raw, _hits(SOURCE, "Every employee gets 10 days of paid sick leave per calendar year."), "q")
+    assert not a.found and a.status == UNVERIFIED and a.citations == []
+    assert len(a.hits) == 2  # the passages are kept so the user can still read them
+
+
+def test_number_without_citation_is_blocked():
+    a = build_answer(_reply("You get 24 days.", [{"source": 1, "quote": REAL_QUOTE}]), _hits(SOURCE), "q")
+    assert a.status == UNVERIFIED
+
+
+def test_marker_for_missing_source_is_blocked():
+    a = build_answer(_reply("Fact [1]. Other fact [7]."), _hits(SOURCE), "q")
+    assert a.status == UNVERIFIED and "7" in a.reason
+
+
+def test_answer_without_any_citation_is_blocked():
+    assert build_answer(_reply("Leave is generous."), _hits(SOURCE), "q").status == UNVERIFIED
 
 
 def test_not_found_has_no_citations():
-    raw = json.dumps({"found": False, "answer": "The documents don't cover this.", "citations": [{"source": 1, "quote": "x"}]})
-    a = build_answer(raw, _hits(SOURCE), "q")
-    assert not a.found and a.citations == []
+    a = build_answer(_reply("The documents don't cover this.", [{"source": 1, "quote": "x"}], found=False), _hits(SOURCE), "q")
+    assert not a.found and a.citations == [] and a.status == NOT_FOUND
 
 
-def test_plain_text_reply_is_still_usable():
+def test_plain_text_reply_is_rejected():
     a = build_answer("You get 24 days [1].", _hits(SOURCE), "q")
-    assert a.found and a.citations[0].page == 6
+    assert not a.found and a.status == INVALID_OUTPUT
+
+
+def test_found_must_be_a_real_boolean():
+    raw = json.dumps({"found": "false", "answer": "You get 24 days [1].", "citations": []})
+    assert build_answer(raw, _hits(SOURCE), "q").status == INVALID_OUTPUT
+
+
+def test_citations_of_the_wrong_type_do_not_crash():
+    raw = json.dumps({"found": True, "answer": "You get 24 days [1].", "citations": 5})
+    assert build_answer(raw, _hits(SOURCE), "q").status == INVALID_OUTPUT
 
 
 # ---- end to end with offline providers ----------------------------------------------------
@@ -173,3 +235,38 @@ def test_follow_up_is_rewritten_before_search(store):
     a = RAGPipeline(store, chat).ask("And for part-time staff?", history)
     assert a.search_query == "How many paid sick days do part-time employees get?"
     assert "Latest question: And for part-time staff?" in chat.calls[0]
+
+
+# ---- retry on malformed replies --------------------------------------------------------------
+
+class _Scripted:
+    """Chat stand-in that returns prepared replies in order."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+        self.calls = 0
+
+    def complete(self, system, messages, max_tokens=900):
+        self.calls += 1
+        return self.replies.pop(0)
+
+
+def test_malformed_reply_is_retried_once(store):
+    good = _reply("Full-time employees get 24 days of paid annual leave [1].", [{"source": 1, "quote": REAL_QUOTE}])
+    chat = _Scripted("not json at all", good)
+    a = RAGPipeline(store, chat).ask("How many days of annual leave do I get?")
+    # The good reply only passes if source [1] is the annual-leave page, which retrieval puts first.
+    assert chat.calls == 2 and a.attempts == 2
+    assert a.status != INVALID_OUTPUT
+
+
+def test_second_malformed_reply_is_blocked(store):
+    chat = _Scripted("not json", "still not json")
+    a = RAGPipeline(store, chat).ask("How many days of annual leave do I get?")
+    assert chat.calls == 2 and a.status == INVALID_OUTPUT and not a.found
+
+
+def test_evidence_failures_are_not_retried(store):
+    chat = _Scripted(_reply("You get 999 days [1]."))
+    a = RAGPipeline(store, chat).ask("How many days of annual leave do I get?")
+    assert chat.calls == 1 and a.status == UNVERIFIED

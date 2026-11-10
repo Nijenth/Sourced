@@ -1,6 +1,6 @@
 # Evaluation results
 
-Model: Offline test mode (keyword matching, not AI) · embeddings: offline:hashing · top-k: 5 · run 2026-11-10 20:28 · 0s
+Model: Offline test mode (keyword matching, not AI) · embeddings: offline:hashing · top-k: 5 · run 2026-11-10 20:37 · 0s
 
 | Check | Score |
 | --- | --- |
@@ -8,6 +8,7 @@ Model: Offline test mode (keyword matching, not AI) · embeddings: offline:hashi
 | Answer contains the expected facts | 7/12 (58%) |
 | Answer cites the right page | 8/12 (67%) |
 | Says "not found" for questions the handbook doesn't cover | 3/3 (100%) |
+| Answerable questions blocked by the citation checks (lower is better) | 0/12 (0%) |
 
 | Question | Expected | Retrieval | Answer | Citation | Refusal |
 | --- | --- | --- | --- | --- | --- |

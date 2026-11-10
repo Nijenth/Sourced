@@ -68,7 +68,7 @@ def main() -> None:
     pipeline = RAGPipeline(store, chat, top_k=top_k)
 
     cases = json.loads((ROOT / "eval" / "questions.json").read_text(encoding="utf-8"))
-    rows, totals = [], {"retrieval": [0, 0], "answer": [0, 0], "citation": [0, 0], "refusal": [0, 0]}
+    rows, totals = [], {"retrieval": [0, 0], "answer": [0, 0], "citation": [0, 0], "refusal": [0, 0], "blocked": [0, 0]}
     started = time.time()
 
     for case in cases:
@@ -85,14 +85,17 @@ def main() -> None:
             r_ok = page in hit_pages
             a_ok = a.found and has_all(a.text, expect)
             c_ok = page in cited_pages
-            for key, val in (("retrieval", r_ok), ("answer", a_ok), ("citation", c_ok)):
+            blocked = a.status in ("unverified", "invalid_output")
+            for key, val in (("retrieval", r_ok), ("answer", a_ok), ("citation", c_ok), ("blocked", blocked)):
                 totals[key][0] += val
                 totals[key][1] += 1
             rows.append([q, f"p. {page}", *("pass" if v else "FAIL" for v in (r_ok, a_ok, c_ok)), "-"])
         status = rows[-1]
         print(f"{'OK ' if 'FAIL' not in status else 'X  '} {q}")
         if "FAIL" in status:
-            print(f"     answer: {a.text[:160]!r}  hits={hit_pages} cited={cited_pages}")
+            print(f"     answer: {a.text[:160]!r}  hits={hit_pages} cited={cited_pages}  status={a.status}")
+            if a.reason:
+                print(f"     why: {a.reason}")
 
     def pct(key):
         n, d = totals[key]
@@ -104,6 +107,7 @@ def main() -> None:
         ("Answer contains the expected facts", pct("answer")),
         ("Answer cites the right page", pct("citation")),
         ("Says \"not found\" for questions the handbook doesn't cover", pct("refusal")),
+        ("Answerable questions blocked by the citation checks (lower is better)", pct("blocked")),
     ]
     lines = [
         "# Evaluation results",

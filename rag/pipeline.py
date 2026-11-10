@@ -1,7 +1,7 @@
 """The question-answering pipeline: rewrite follow-ups, retrieve, answer with citations."""
 from __future__ import annotations
 
-from .citations import Answer, build_answer
+from .citations import INVALID_OUTPUT, NOT_FOUND, Answer, build_answer
 from .providers import ChatModel
 from .store import VectorStore
 
@@ -11,7 +11,8 @@ Rules:
 - Use only facts stated in the sources. Never use outside knowledge, and never guess.
 - If the sources do not contain the answer, set "found" to false and say briefly that the documents don't cover it. Do not add citations in that case.
 - If the sources answer only part of the question, answer that part and say what is not covered.
-- After each fact, add a marker like [1] or [2] for the source it came from.
+- After each fact, add a marker like [1] or [2] for the source it came from. Every sentence that contains a number needs a marker.
+- Copy numbers exactly as the source states them.
 - For every source you cite, copy one short quote (one sentence or less) word for word from that source, exactly as written.
 - Keep the answer short and direct: one to four sentences, or a short bullet list for several items. Plain language.
 - Answer in the same language as the question.
@@ -24,6 +25,9 @@ for searching a document. Resolve words like "it", "that" or "they" using the co
 If the question already stands on its own, return it unchanged. Reply with the rewritten question only."""
 
 NOT_FOUND_TEXT = "I couldn't find that in the documents."
+
+REPAIR_PROMPT = """Your previous reply was not valid. Reply again with JSON only, exactly in the required shape: \
+{"found": true or false, "answer": "...", "citations": [{"source": <number>, "quote": "..."}]}"""
 
 
 def format_sources(hits) -> str:
@@ -58,11 +62,19 @@ class RAGPipeline:
         query = self.standalone_question(question, history or [])
         hits = [h for h in self.store.search(query, self.top_k) if h.score >= self.min_score]
         if not hits:
-            return Answer(text=NOT_FOUND_TEXT, found=False, hits=[], search_query=query)
+            return Answer(text=NOT_FOUND_TEXT, found=False, hits=[], search_query=query, status=NOT_FOUND)
 
         user = f"Sources:\n\n{format_sources(hits)}\n\nQuestion: {query}"
         raw = self.chat.complete(ANSWER_SYSTEM, [{"role": "user", "content": user}], max_tokens=900)
         answer = build_answer(raw, hits, query)
+        if answer.status == INVALID_OUTPUT:
+            # One retry for a malformed reply. Evidence failures are not retried.
+            messages = [{"role": "user", "content": user}]
+            if raw.strip():
+                messages += [{"role": "assistant", "content": raw[:4000]}, {"role": "user", "content": REPAIR_PROMPT}]
+            raw = self.chat.complete(ANSWER_SYSTEM, messages, max_tokens=900)
+            answer = build_answer(raw, hits, query)
+            answer.attempts = 2
         if not answer.found and not answer.text:
             answer.text = NOT_FOUND_TEXT
         return answer
