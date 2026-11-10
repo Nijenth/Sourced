@@ -25,7 +25,14 @@ from rag.citations import INVALID_OUTPUT, UNVERIFIED, snippet  # noqa: E402
 from rag.config import Settings, load_settings  # noqa: E402
 from rag.documents import PdfError, chunk_pages, count_pages, file_hash, load_pdf  # noqa: E402
 from rag.pipeline import RAGPipeline  # noqa: E402
-from rag.providers import ClaudeChat, OpenAIChat, OpenAIEmbedder, ProviderError  # noqa: E402
+from rag.providers import (  # noqa: E402
+    ProviderError,
+    chat_provider_names,
+    embedding_provider_name,
+    make_chat,
+    make_embedder,
+    setup_problems,
+)
 from rag.store import VectorStore  # noqa: E402
 
 ROOT = Path(__file__).parent
@@ -59,22 +66,13 @@ settings: Settings = load_settings()
 # ---------- cached resources ----------------------------------------------------------------
 
 @st.cache_resource(show_spinner=False)
-def get_embedder(fake: bool, key: str | None, model: str):
-    if fake:
-        from rag.offline import HashingEmbedder
-
-        return HashingEmbedder()
-    return OpenAIEmbedder(api_key=key, model=model)
+def get_embedder(provider: str | None, model: str | None):
+    # The arguments are the cache key: changing the provider or model builds a new embedder.
+    return make_embedder()
 
 
 def get_chat(provider: str):
-    if provider == "offline":
-        from rag.offline import KeywordChat
-
-        return KeywordChat()
-    if provider == "claude":
-        return ClaudeChat(settings.anthropic_api_key, settings.claude_model)
-    return OpenAIChat(settings.openai_api_key, settings.openai_model)
+    return make_chat(provider)
 
 
 @st.cache_resource(show_spinner="Indexing the sample handbook…")
@@ -283,20 +281,20 @@ st.markdown(
 if settings.fake_mode:
     st.warning("Offline test mode: answers come from keyword matching, not AI. Unset RAG_OFFLINE_MODE for the real app.")
 
-if not settings.can_embed or not settings.providers:
-    missing = []
-    if not settings.openai_api_key:
-        missing.append("`OPENAI_API_KEY` (needed to index documents)")
-    if not settings.providers:
-        missing.append("`ANTHROPIC_API_KEY` or `OPENAI_API_KEY` (needed to answer)")
-    st.error("This app needs API keys before it can run: " + "; ".join(missing) + ".")
+problems = setup_problems()
+if problems:
+    st.error("This app isn't set up yet.\n\n" + "\n\n".join(f"- {p}" for p in problems))
     st.markdown(
         "Copy `.env.example` to `.env` and add your keys, or on Streamlit Community Cloud add them under "
         "**App settings › Secrets**. See the README for details."
     )
     st.stop()
 
-embedder = get_embedder(settings.fake_mode, settings.openai_api_key, settings.embedding_model)
+try:
+    embedder = get_embedder(embedding_provider_name(), os.getenv("EMBEDDING_MODEL"))
+except ProviderError as exc:
+    st.error(str(exc))
+    st.stop()
 ss = st.session_state
 ss.setdefault("messages", {MODE_SAMPLE: [], MODE_UPLOAD: []})
 ss.setdefault("asked", 0)
@@ -351,7 +349,7 @@ with st.sidebar:
         st.caption("Uploads are kept in memory for this session only and are never stored.")
 
     st.subheader("Model")
-    providers = settings.providers
+    providers = chat_provider_names()
     labels = {p: get_chat(p).label for p in providers}
     provider = st.selectbox("Answer with", providers, format_func=labels.get, label_visibility="collapsed")
 

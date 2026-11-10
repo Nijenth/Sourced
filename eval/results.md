@@ -1,6 +1,6 @@
 # Evaluation results
 
-Model: Offline test mode (keyword matching, not AI) · embeddings: offline:hashing · top-k: 5 · run 2026-11-10 20:37 · 0s
+Model: Offline test mode (keyword matching, not AI) · embeddings: offline:hashing · top-k: 5 · run 2026-11-10 21:04 · 0s
 
 | Check | Score |
 | --- | --- |

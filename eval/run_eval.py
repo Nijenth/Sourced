@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -32,21 +33,16 @@ PDF = ROOT / "data" / "sample" / "Brightleaf_Studio_Employee_Handbook.pdf"
 
 
 def build(provider: str):
+    from rag.providers import ProviderError, make_chat, make_embedder
+
     s = load_settings()
+    env = dict(os.environ)
     if provider == "offline":
-        from rag.offline import HashingEmbedder, KeywordChat
-
-        return HashingEmbedder(), KeywordChat(), s.top_k
-    from rag.providers import ClaudeChat, OpenAIChat, OpenAIEmbedder
-
-    if not s.openai_api_key:
-        sys.exit("OPENAI_API_KEY is needed for embeddings. Add it to .env or use --provider offline.")
-    embedder = OpenAIEmbedder(s.openai_api_key, s.embedding_model)
-    if provider == "claude":
-        if not s.anthropic_api_key:
-            sys.exit("ANTHROPIC_API_KEY is not set.")
-        return embedder, ClaudeChat(s.anthropic_api_key, s.claude_model), s.top_k
-    return embedder, OpenAIChat(s.openai_api_key, s.openai_model), s.top_k
+        env["RAG_OFFLINE_MODE"] = "1"
+    try:
+        return make_embedder(env), make_chat(provider, env), s.top_k
+    except ProviderError as exc:
+        sys.exit(f"{exc} (or use --provider offline)")
 
 
 def has_all(text: str, expected: list[str]) -> bool:
@@ -56,9 +52,12 @@ def has_all(text: str, expected: list[str]) -> bool:
 
 def main() -> None:
     s = load_settings()
-    default = "claude" if s.anthropic_api_key else "openai" if s.openai_api_key else "offline"
+    from rag.providers import PROVIDERS, chat_provider_names
+
+    ready = chat_provider_names()
+    default = ready[0] if ready else "offline"
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", choices=["claude", "openai", "offline"], default=default)
+    ap.add_argument("--provider", choices=["offline", *PROVIDERS, "claude"], default=default)
     ap.add_argument("--out", default=str(ROOT / "eval" / "results.md"))
     args = ap.parse_args()
 
