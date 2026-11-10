@@ -1,15 +1,15 @@
 # Evaluation results
 
-Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-text · retrieval: hybrid · top-k: 5 · run 2026-11-11 00:41 · 414s
+Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-text · retrieval: hybrid · top-k: 5 · run 2026-11-11 00:48 · 301s
 
 | Check | Score |
 | --- | --- |
 | Retrieval: the right page is in the top results (Hit@k) | 29/29 (100%) |
 | Retrieval: how high the right page ranks (MRR, 1.00 = always first) | 0.91 |
-| Answer contains the expected facts | 28/29 (97%) |
-| Answer cites the right page | 28/29 (97%) |
+| Answer contains the expected facts | 29/29 (100%) |
+| Answer cites the right page | 29/29 (100%) |
 | Says "not found" for questions the handbook doesn't cover | 6/6 (100%) |
-| Answerable questions blocked by the citation checks (lower is better) | 1/29 (3%) |
+| Answerable questions blocked by the citation checks (lower is better) | 0/29 (0%) |
 
 | Category | Fully correct | Retrieval hit | MRR |
 | --- | --- | --- | --- |
@@ -17,7 +17,7 @@ Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-
 | exact_term | 4/4 (100%) | 4/4 (100%) | 0.75 |
 | exception | 3/3 (100%) | 3/3 (100%) | 0.83 |
 | followup | 3/3 (100%) | 3/3 (100%) | 1.00 |
-| multi_part | 2/3 (67%) | 3/3 (100%) | 1.00 |
+| multi_part | 3/3 (100%) | 3/3 (100%) | 1.00 |
 | near_miss | 3/3 (100%) | - | - |
 | paraphrase | 4/4 (100%) | 4/4 (100%) | 1.00 |
 
@@ -49,7 +49,7 @@ Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-
 | exact_term | What is the SpeakUp form used for? | p. 14, 16 | pass | answered |
 | exact_term | Is Juneteenth a day off at Brightleaf? | p. 6 | pass | answered |
 | exact_term | Which version of the handbook is this, and when did it take effect? | p. 1 | pass | answered |
-| multi_part | I'm a Director and I'm resigning. How much notice must I give, and how soon must I return my laptop after my last day? | p. 4, 15 | FAIL | unverified |
+| multi_part | I'm a Director and I'm resigning. How much notice must I give, and how soon must I return my laptop after my last day? | p. 4, 15 | pass | answered |
 | multi_part | How long is probation, and can it be extended? If so, by how much? | p. 4 | pass | answered |
 | multi_part | If I'm off sick for a long time, how much of my salary does short-term disability pay, and for how long? | p. 7 | pass | answered |
 | followup | What about in San Francisco? | p. 10 | pass | answered |

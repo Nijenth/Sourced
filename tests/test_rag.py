@@ -237,6 +237,24 @@ def test_rebuilt_quotes_with_wrong_content_are_rejected(pages, quote):
     assert locate_quote(quote, pages[3].text) is None
 
 
+def test_table_quote_with_a_gap_marker_is_located(pages):
+    # Ollama: header and row joined with "..." in its own order (the "..." must not count as a full stop).
+    assert locate_quote("Lead, Principal and Director roles Notice required (either side) ... 8 weeks", pages[3].text)
+
+
+def test_number_under_the_wrong_marker_is_accepted_when_a_verified_quote_shows_it():
+    sick = "Every employee gets 10 days of paid sick leave per calendar year."
+    raw = _reply("Full-time staff get 24 days [2].", [{"source": 1, "quote": REAL_QUOTE}, {"source": 2, "quote": sick}])
+    a = build_answer(raw, _hits(SOURCE, sick), "q")
+    assert a.status == ANSWERED, a.reason
+
+
+def test_number_with_no_supporting_source_or_quote_is_still_blocked():
+    sick = "Every employee gets 10 days of paid sick leave per calendar year."
+    raw = _reply("Full-time staff get 30 days [2].", [{"source": 1, "quote": REAL_QUOTE}, {"source": 2, "quote": sick}])
+    assert build_answer(raw, _hits(SOURCE, sick), "q").status == UNVERIFIED
+
+
 @pytest.mark.parametrize("page_index, quote", [
     # dropped "not": the source says sick leave does NOT carry over
     (6, "Sick leave does carry over and is paid out when you leave."),

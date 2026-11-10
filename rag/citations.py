@@ -209,8 +209,8 @@ def _covered(quote: str, source_text: str) -> str | None:
     another value from the same table can pass this check; an LLM faithfulness check would be needed for that.
     """
     words = _content_words(quote)
-    if re.search(r"[.!?](?:\s|$)", quote) or any(w in NEGATIONS for w in words):
-        return None
+    if re.search(r"[.!?](?:\s|$)", _ELLIPSIS.sub(" ", quote)) or any(w in NEGATIONS for w in words):
+        return None  # "..." and "|" mark gaps, not sentence ends
     if len(words) < 4 or not numbers_in(quote) <= numbers_in(source_text):
         return None
     source_words = set(_content_words(source_text))
@@ -345,6 +345,9 @@ def _build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
 
     # 3. Every number in the answer must appear in a cited source: the sentence's own sources if it has
     #    markers, otherwise any source the answer cites (models often put one marker after a list).
+    #    A number is also accepted if a verified quote shown to the user contains it, even when the
+    #    model put it under the wrong marker: the evidence is still on screen.
+    quoted_numbers = set().union(*(numbers_in(q) for q in quotes.values())) if quotes else set()
     all_cited = sorted(set(marked + listed))
     evidence_all = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in all_cited)) if all_cited else set()
     for sentence in _answer_sentences(text):
@@ -353,8 +356,8 @@ def _build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
         if not claim_numbers:
             continue  # framing or "not covered" sentences need no marker
         if cited:
-            evidence = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in cited))
-            where = "the cited source"
+            evidence = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in cited)) | quoted_numbers
+            where = "the cited source or any quoted passage"
         else:
             if not all_cited:
                 return _blocked(UNVERIFIED, "A sentence with a specific number has no citation.", hits, search_query)
