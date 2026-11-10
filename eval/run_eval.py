@@ -102,7 +102,7 @@ def load_cases(categories: list[str] | None) -> list[dict]:
     return [c for c in cases if not categories or c.get("category", "basic") in categories]
 
 
-def run_ablation(args, top_k: int) -> None:
+def run_ablation(args, top_k: int, rerank_pool: int = 20, rerank_model: str = "") -> None:
     """Retrieval-only comparison of search modes: no chat model is called, so it is free and quick."""
     from rag.providers import ProviderError, make_embedder
     from rag.store import SEARCH_MODES
@@ -122,14 +122,30 @@ def run_ablation(args, top_k: int) -> None:
     cases = [c for c in all_cases if gold_pages(c) and not c.get("history")]
     skipped = len(all_cases) - len(cases)
 
-    results = {}  # mode -> list of (case, hit, reciprocal rank, pages)
-    for mode in SEARCH_MODES:
+    from rag.providers import ProviderError
+    from rag.rerank import CrossEncoderReranker
+
+    try:
+        reranker = CrossEncoderReranker(rerank_model) if rerank_model else CrossEncoderReranker()
+    except ProviderError as exc:
+        reranker = None
+        print(f"(Skipping the rerank rows: {exc})")
+
+    configs = [(mode, mode, False) for mode in SEARCH_MODES]
+    if reranker:
+        configs += [(f"{mode}+rerank", mode, True) for mode in ("dense", "hybrid")]
+    results = {}  # label -> list of (case, hit, reciprocal rank, pages)
+    for label, mode, use_rerank in configs:
         rows = []
         for c in cases:
-            pages = [h.chunk.page for h in store.search(c["question"], top_k, mode=mode)]
+            if use_rerank:
+                hits = reranker.rerank(c["question"], store.search(c["question"], max(rerank_pool, top_k), mode=mode))
+                pages = [h.chunk.page for h in hits[:top_k]]
+            else:
+                pages = [h.chunk.page for h in store.search(c["question"], top_k, mode=mode)]
             hit, rr = page_metrics(gold_pages(c), pages, c.get("needs_all_pages", False))
             rows.append((c, hit, rr, pages))
-        results[mode] = rows
+        results[label] = rows
 
     def score(rows):
         n = len(rows) or 1
@@ -141,32 +157,34 @@ def run_ablation(args, top_k: int) -> None:
     table = [header, "|" + " --- |" * (3 + len(cats))]
     print(f"\nRetrieval-only comparison · embeddings: {embedder.name} · top-k: {top_k} · "
           f"{len(cases)} questions ({skipped} follow-up/unanswerable skipped)\n")
-    print(f"  {'search':<8} {'Hit@k':>12} {'MRR':>6}   per-category hits")
+    print(f"  {'search':<14} {'Hit@k':>12} {'MRR':>6}   per-category hits")
     for mode, rows in results.items():
         hit, mrr_ = score(rows)
         per_cat = []
         for cat in cats:
             cr = [r for r in rows if r[0].get("category", "basic") == cat]
             per_cat.append(f"{sum(r[1] for r in cr)}/{len(cr)}")
-        print(f"  {mode:<8} {hit:>12} {mrr_:>6}   " + "  ".join(f"{c}:{p}" for c, p in zip(cats, per_cat)))
+        print(f"  {mode:<14} {hit:>12} {mrr_:>6}   " + "  ".join(f"{c}:{p}" for c, p in zip(cats, per_cat)))
         table.append(f"| {mode} | {hit} | {mrr_} | " + " | ".join(per_cat) + " |")
 
     # Questions where the methods disagree are the interesting ones.
     diffs = []
+    labels = list(results)
     for i, c in enumerate(cases):
-        outcomes = {m: results[m][i][1] for m in SEARCH_MODES}
-        if len(set(outcomes.values())) > 1:
+        outcomes = {m: results[m][i][1] for m in labels}
+        ranks = {m: results[m][i][2] for m in labels}
+        if len(set(outcomes.values())) > 1 or len(set(ranks.values())) > 1:
             found = ", ".join(m for m, ok in outcomes.items() if ok) or "none"
             diffs.append(f"- {c['question']} (right page found by: {found}; "
-                         + "; ".join(f"{m} {results[m][i][3]}" for m in SEARCH_MODES) + ")")
+                         + "; ".join(f"{m} {results[m][i][3]}" for m in labels) + ")")
     if diffs:
-        print("\nWhere the methods disagree:")
+        print("\nWhere the methods disagree (on finding the page, or on its rank):")
         print("\n".join("  " + d for d in diffs))
 
     out = ROOT / "eval" / "ablation.md"
     out.write_text("\n".join([
         "# Retrieval ablation", "",
-        f"Embeddings: {embedder.name} · top-k: {top_k} · {dt.datetime.now():%Y-%m-%d %H:%M} · "
+        f"Embeddings: {embedder.name} · top-k: {top_k} · rerank pool: {rerank_pool} · {dt.datetime.now():%Y-%m-%d %H:%M} · "
         f"{len(cases)} answerable questions (follow-ups skipped: they need the chat model to rewrite them).", "",
         *table, "", "## Where the methods disagree", "", *(diffs or ["(none)"]), "",
     ]), encoding="utf-8")
@@ -190,17 +208,27 @@ def main() -> None:
                     help="only run these categories (repeatable), e.g. --category followup --category exception")
     ap.add_argument("--retrieval", choices=["dense", "bm25", "hybrid"], default=s.retrieval_mode,
                     help="search method (default: RETRIEVAL_MODE setting, else hybrid)")
+    ap.add_argument("--rerank", choices=["none", "cross-encoder"], default=s.reranker if s.reranker in ("none", "cross-encoder") else "none",
+                    help="rerank a wider pool of passages before answering (default: RERANKER setting, else none)")
     ap.add_argument("--retrieval-only", action="store_true",
                     help="compare dense, bm25 and hybrid search without calling any AI model (free and fast)")
     args = ap.parse_args()
     if args.retrieval_only:
-        run_ablation(args, s.top_k)
+        run_ablation(args, s.top_k, s.rerank_pool, s.rerank_model)
         return
 
     embedder, chat, top_k = build(args.provider)
     store = VectorStore(embedder, "eval")
     store.add(chunk_pages(load_pdf(PDF.read_bytes(), PDF.name)))
-    pipeline = RAGPipeline(store, chat, top_k=top_k, retrieval_mode=args.retrieval)
+    from rag.providers import ProviderError
+    from rag.rerank import make_reranker
+
+    try:
+        reranker = make_reranker(args.rerank, s.rerank_model)
+    except ProviderError as exc:
+        sys.exit(str(exc))
+    pipeline = RAGPipeline(store, chat, top_k=top_k, retrieval_mode=args.retrieval, reranker=reranker,
+                           rerank_pool=s.rerank_pool)
 
     cases = load_cases(args.category)
     results: list[dict] = []
@@ -250,6 +278,8 @@ def main() -> None:
             if a.status in ("unverified", "invalid_output") and a.raw:
                 print(f"     model said: {a.raw[:400]!r}")
 
+    if pipeline.rerank_error:
+        print(f"\nNote: the reranker failed at least once and retrieval order was used: {pipeline.rerank_error}")
     answerable = [r for r in results if r["answerable"]]
     unanswerable = [r for r in results if not r["answerable"]]
 
@@ -279,7 +309,7 @@ def main() -> None:
     lines = [
         "# Evaluation results",
         "",
-        f"Model: {model} · embeddings: {embedder.name} · retrieval: {args.retrieval} · top-k: {top_k} · "
+        f"Model: {model} · embeddings: {embedder.name} · retrieval: {args.retrieval} · rerank: {args.rerank} · top-k: {top_k} · "
         f"run {dt.datetime.now():%Y-%m-%d %H:%M} · {time.time() - started:.0f}s",
         "",
         *([f"**Partial run.** {stopped}", ""] if stopped else []),

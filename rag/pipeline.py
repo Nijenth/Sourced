@@ -41,12 +41,15 @@ def format_sources(hits) -> str:
 
 class RAGPipeline:
     def __init__(self, store: VectorStore, chat: ChatModel, top_k: int = 5, min_score: float = 0.0,
-                 retrieval_mode: str = "hybrid"):
+                 retrieval_mode: str = "hybrid", reranker=None, rerank_pool: int = 20):
         self.store = store
         self.chat = chat
         self.top_k = top_k
         self.min_score = min_score
         self.retrieval_mode = retrieval_mode
+        self.reranker = reranker  # optional: reorders a wider pool before the best top_k are kept
+        self.rerank_pool = max(rerank_pool, top_k)
+        self.rerank_error = ""  # last reranker failure, if any (the answer still uses retrieval order)
 
     def standalone_question(self, question: str, history: list[dict]) -> str:
         """Turn a follow-up like "what about part-time staff?" into a full question for retrieval."""
@@ -62,9 +65,21 @@ class RAGPipeline:
         rewritten = rewritten.strip().strip('"').strip()
         return rewritten if 3 < len(rewritten) < 500 else question
 
+    def retrieve(self, query: str) -> list:
+        """Search, then (optionally) rerank a wider pool and keep the best top_k."""
+        k = self.rerank_pool if self.reranker else self.top_k
+        hits = [h for h in self.store.search(query, k, mode=self.retrieval_mode) if h.score >= self.min_score]
+        if self.reranker and hits:
+            try:
+                hits = self.reranker.rerank(query, hits)
+                self.rerank_error = ""
+            except Exception as exc:  # never let reranking break an answer: fall back to retrieval order
+                self.rerank_error = f"{type(exc).__name__}: {exc}"[:200]
+        return hits[: self.top_k]
+
     def ask(self, question: str, history: list[dict] | None = None) -> Answer:
         query = self.standalone_question(question, history or [])
-        hits = [h for h in self.store.search(query, self.top_k, mode=self.retrieval_mode) if h.score >= self.min_score]
+        hits = self.retrieve(query)
         if not hits:
             return Answer(text=NOT_FOUND_TEXT, found=False, hits=[], search_query=query, status=NOT_FOUND)
 

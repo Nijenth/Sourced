@@ -25,6 +25,7 @@ from rag.citations import INVALID_OUTPUT, UNVERIFIED, snippet  # noqa: E402
 from rag.config import Settings, load_settings  # noqa: E402
 from rag.documents import PdfError, chunk_pages, count_pages, file_hash, load_pdf  # noqa: E402
 from rag.pipeline import RAGPipeline  # noqa: E402
+from rag.rerank import make_reranker  # noqa: E402
 from rag.providers import (  # noqa: E402
     ProviderError,
     chat_provider_names,
@@ -73,6 +74,11 @@ def get_embedder(provider: str | None, model: str | None):
 
 def get_chat(provider: str):
     return make_chat(provider)
+
+
+@st.cache_resource(show_spinner="Loading the reranker…")
+def get_reranker(name: str, model: str):
+    return make_reranker(name, model)
 
 
 @st.cache_resource(show_spinner="Indexing the sample handbook…")
@@ -418,7 +424,13 @@ if prompt:
         reply = {"role": "assistant", "content": "The demo has reached today's question limit. Please try again tomorrow.", "error": True}
     else:
         history = [{"role": m["role"], "content": m["content"]} for m in messages if not m.get("error")]
-        pipeline = RAGPipeline(store, get_chat(provider), top_k=settings.top_k, retrieval_mode=settings.retrieval_mode)
+        try:
+            reranker = get_reranker(settings.reranker, settings.rerank_model)
+        except ProviderError as exc:
+            st.warning(f"{exc} Answering without reranking.")
+            reranker = None
+        pipeline = RAGPipeline(store, get_chat(provider), top_k=settings.top_k, retrieval_mode=settings.retrieval_mode,
+                               reranker=reranker, rerank_pool=settings.rerank_pool)
         with st.chat_message("assistant"):
             with st.spinner("Searching the documents…"):
                 try:
