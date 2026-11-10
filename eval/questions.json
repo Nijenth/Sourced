@@ -1,0 +1,17 @@
+[
+  {"question": "How many days of annual leave do full-time employees get?", "page": 6, "expect": ["24"]},
+  {"question": "How many unused leave days can I carry over, and by when must I use them?", "page": 6, "expect": ["5", "31 March"]},
+  {"question": "How long is the probation period?", "page": 4, "expect": ["90"]},
+  {"question": "What notice do I have to give if I resign after probation?", "page": 4, "expect": ["4 weeks"]},
+  {"question": "How long can I work from another country each year?", "page": 5, "expect": ["30 days"]},
+  {"question": "What is the nightly hotel limit when travelling for work?", "page": 10, "expect": ["220"]},
+  {"question": "How many paid sick days do I get?", "page": 7, "expect": ["10"]},
+  {"question": "How long is parental leave for a non-birthing parent?", "page": 8, "expect": ["8 weeks"]},
+  {"question": "What is my yearly learning budget?", "page": 11, "expect": ["1,500"]},
+  {"question": "Who do I tell if my laptop is stolen, and how quickly?", "page": 12, "expect": ["24 hours"]},
+  {"question": "How much does the company match on 401(k) contributions?", "page": 9, "expect": ["4%"]},
+  {"question": "When do performance reviews happen?", "page": 13, "expect": ["June", "December"]},
+  {"question": "What is the dress code for client meetings?", "page": null, "expect": []},
+  {"question": "Does Brightleaf have a pet-friendly office policy?", "page": null, "expect": []},
+  {"question": "What is the company's stock price today?", "page": null, "expect": []}
+]
