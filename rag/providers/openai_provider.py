@@ -28,22 +28,32 @@ class OpenAIEmbedder:
 
 
 class OpenAIChat:
-    def __init__(self, api_key: str, model: str = DEFAULT_CHAT_MODEL):
-        openai = import_sdk("openai", "openai", "OpenAI")
-        self._client = openai.OpenAI(api_key=api_key, max_retries=3, timeout=90)
+    """OpenAI chat. Also the base for OpenAI-compatible services (see groq_provider.py)."""
+
+    service = "OpenAI"  # used in error messages
+
+    def __init__(self, api_key: str, model: str = DEFAULT_CHAT_MODEL, base_url: str | None = None, client=None):
+        if client is None:
+            openai = import_sdk("openai", "openai", self.service)
+            client = openai.OpenAI(api_key=api_key, base_url=base_url, max_retries=3, timeout=90)
+        self._client = client
         self.model = model
         self.name = "openai"
         self.label = f"OpenAI ({model})"
+        self.extra_body: dict = {}  # provider-specific request fields
+        self.token_headroom = 0  # extra tokens for models that reason before answering
 
     def complete(self, system: str, messages: list[dict], max_tokens: int = 900) -> str:
+        kwargs = {"extra_body": self.extra_body} if self.extra_body else {}
         try:
             resp = self._client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "system", "content": system}, *messages],
-                max_completion_tokens=max_tokens,
+                max_completion_tokens=max_tokens + self.token_headroom,
+                **kwargs,
             )
         except Exception as exc:
-            raise ProviderError(friendly_error("OpenAI", exc)) from exc
+            raise ProviderError(friendly_error(self.service, exc)) from exc
         return resp.choices[0].message.content or ""
 
 

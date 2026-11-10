@@ -155,9 +155,55 @@ def test_fabricated_quote_blocks_the_whole_answer():
     assert len(a.hits) == 2  # the passages are kept so the user can still read them
 
 
-def test_number_without_citation_is_blocked():
-    a = build_answer(_reply("You get 24 days.", [{"source": 1, "quote": REAL_QUOTE}]), _hits(SOURCE), "q")
+def test_number_without_any_citation_is_blocked():
+    a = build_answer(_reply("You get 24 days."), _hits(SOURCE), "q")
     assert a.status == UNVERIFIED
+
+
+def test_list_with_one_marker_passes_when_numbers_are_in_the_cited_source():
+    raw = _reply("Leave:\n- Full-time: 24 days\n- Accrual: 2 days per month [1]", [{"source": 1, "quote": REAL_QUOTE}])
+    a = build_answer(raw, _hits(SOURCE), "q")
+    assert a.status == ANSWERED, a.reason
+
+
+def test_unmarked_number_not_in_any_cited_source_is_blocked():
+    raw = _reply("Leave:\n- Full-time: 30 days\n- Accrual: 2 days per month [1]", [{"source": 1, "quote": REAL_QUOTE}])
+    a = build_answer(raw, _hits(SOURCE), "q")
+    assert a.status == UNVERIFIED and "30" in a.reason
+
+
+def test_quote_stitched_with_ellipsis_is_located():
+    quote = "Full-time employees get 24 days of paid annual leave ... Leave accrues at 2 days per month."
+    assert locate_quote(quote, SOURCE)
+    assert locate_quote(quote.replace("...", "\u2026"), SOURCE)
+
+
+def test_unusual_hyphens_and_spaces_in_quotes_still_match():
+    # Groq quoted "pro\u2011rated" (non-breaking hyphen) for a source that says "pro-rated".
+    source = "Part-time employees receive a pro-rated amount based on their contracted hours."
+    assert locate_quote("part\u2011time employees receive a pro\u2011rated amount based on their contracted hours", source)
+    assert locate_quote("Full\u2011time employees get 24\u202fdays of paid annual leave", SOURCE)
+
+
+def test_stitched_quote_with_an_invented_part_is_rejected():
+    assert locate_quote("Full-time employees get 24 days ... Unlimited sick days for everyone.", SOURCE) is None
+    assert locate_quote("Full-time employees get 24 days ... Leave accrues at 3 days per month.", SOURCE) is None
+
+
+@pytest.mark.parametrize("quote", [
+    "Notice periods... After probation 4 weeks",
+    "Notice periods Situation Notice required (either side) ... Lead, Principal and Director roles 8 weeks",
+    "Every new employee has a probation period of 90 days (three months). ... Probation can be extended once, "
+    "by up to 60 days, if both of you agree more time is needed.",
+])
+def test_real_quotes_from_the_eval_are_located_on_page_4(pages, quote):
+    # These are quotes Groq and Ollama actually gave; they were wrongly rejected before.
+    assert locate_quote(quote, pages[3].text), pages[3].text[:600]
+
+
+def test_raw_reply_is_kept_for_diagnostics():
+    a = build_answer("not json", _hits(SOURCE), "q")
+    assert a.raw == "not json" and a.text == BLOCKED_TEXT
 
 
 def test_marker_for_missing_source_is_blocked():

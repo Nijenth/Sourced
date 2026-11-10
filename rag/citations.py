@@ -28,7 +28,11 @@ BLOCKED_TEXT = (
 # [1], [1][2] and [1, 2] style markers
 _MARKER = re.compile(r"\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\]")
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-_TRANSLATE = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-", "\u00a0": " "})
+_TRANSLATE = str.maketrans({
+    "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',  # curly quotes
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-", "\u2212": "-",  # hyphens, dashes, minus
+    "\u00a0": " ", "\u202f": " ", "\u2009": " ",  # no-break and thin spaces
+})
 # Split answer sentences, but never before a marker, so "24 days. [1]" stays one sentence.
 _ANSWER_SPLIT = re.compile(r"(?<=[.!?])\s+(?!\[\d)")
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
@@ -64,6 +68,7 @@ class Answer:
     status: str = ANSWERED
     reason: str = ""  # short explanation when the answer was blocked
     attempts: int = 1  # model calls used to produce the answer
+    raw: str = ""  # the model's reply as received, for debugging and evaluation (not shown to users)
 
 
 class OutputError(ValueError):
@@ -140,7 +145,25 @@ def validate_reply(data: dict) -> tuple[bool, str, list[tuple[int, str]]]:
     return found, answer.strip(), pairs
 
 
+_ELLIPSIS = re.compile(r"\s*(?:\.{3,}|\u2026)\s*")
+
+
 def locate_quote(quote: str, source_text: str, min_ratio: float = 0.85) -> str | None:
+    """Like _locate_one, but also accepts quotes stitched from parts with "..." (each part must be found)."""
+    parts = [p for p in _ELLIPSIS.split(quote) if len(_norm(p)) >= 8]
+    if len(parts) <= 1:
+        return _locate_one(quote, source_text, min_ratio)
+    found: list[str] = []
+    for part in parts:
+        located = _locate_one(part, source_text, min_ratio)
+        if located is None:
+            return None  # any invented part fails the whole quote
+        if located not in found:
+            found.append(located)
+    return " \u2026 ".join(found)
+
+
+def _locate_one(quote: str, source_text: str, min_ratio: float = 0.85) -> str | None:
     """Return the passage of `source_text` that matches `quote`, or None if it isn't there.
 
     Small wording differences (punctuation, a dropped word) are tolerated, but every number in the
@@ -192,6 +215,12 @@ def _blocked(status: str, reason: str, hits: list[Hit], query: str) -> Answer:
 
 def build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
     """Turn the model's raw reply into an Answer, or block it if it can't be verified."""
+    answer = _build_answer(raw, hits, search_query)
+    answer.raw = raw
+    return answer
+
+
+def _build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
     data = parse_model_json(raw)
     if data is None:
         return _blocked(INVALID_OUTPUT, "The model's reply wasn't in the required JSON format.", hits, search_query)
@@ -223,19 +252,26 @@ def build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
                 return _blocked(UNVERIFIED, f"The quote given for source [{n}] isn't in that source.", hits, search_query)
             quotes[n] = located
 
-    # 3. Every number in the answer must appear in the source(s) cited for that sentence.
+    # 3. Every number in the answer must appear in a cited source: the sentence's own sources if it has
+    #    markers, otherwise any source the answer cites (models often put one marker after a list).
+    all_cited = sorted(set(marked + listed))
+    evidence_all = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in all_cited)) if all_cited else set()
     for sentence in _answer_sentences(text):
         cited = [n for m in _MARKER.finditer(sentence) for n in _marker_numbers(m)]
         claim_numbers = numbers_in(_MARKER.sub(" ", sentence), ignore_one=True)
         if not claim_numbers:
             continue  # framing or "not covered" sentences need no marker
-        if not cited:
-            return _blocked(UNVERIFIED, "A sentence with a specific number has no citation.", hits, search_query)
-        evidence = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in cited))
+        if cited:
+            evidence = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in cited))
+            where = "the cited source"
+        else:
+            if not all_cited:
+                return _blocked(UNVERIFIED, "A sentence with a specific number has no citation.", hits, search_query)
+            evidence, where = evidence_all, "any cited source"
         missing = sorted(claim_numbers - evidence)
         if missing:
             return _blocked(
-                UNVERIFIED, f"The number(s) {', '.join(missing)} don't appear in the cited source.", hits, search_query
+                UNVERIFIED, f"The number(s) {', '.join(missing)} don't appear in {where}.", hits, search_query
             )
 
     # 4. Build citations in the order they appear.

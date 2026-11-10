@@ -1,17 +1,43 @@
 [
-  {"question": "How many days of annual leave do full-time employees get?", "page": 6, "expect": ["24"]},
-  {"question": "How many unused leave days can I carry over, and by when must I use them?", "page": 6, "expect": ["5", "31 March"]},
-  {"question": "How long is the probation period?", "page": 4, "expect": ["90"]},
-  {"question": "What notice do I have to give if I resign after probation?", "page": 4, "expect": ["4 weeks"]},
-  {"question": "How long can I work from another country each year?", "page": 5, "expect": ["30 days"]},
-  {"question": "What is the nightly hotel limit when travelling for work?", "page": 10, "expect": ["220"]},
-  {"question": "How many paid sick days do I get?", "page": 7, "expect": ["10"]},
-  {"question": "How long is parental leave for a non-birthing parent?", "page": 8, "expect": ["8 weeks"]},
-  {"question": "What is my yearly learning budget?", "page": 11, "expect": ["1,500"]},
-  {"question": "Who do I tell if my laptop is stolen, and how quickly?", "page": 12, "expect": ["24 hours"]},
-  {"question": "How much does the company match on 401(k) contributions?", "page": 9, "expect": ["4%"]},
-  {"question": "When do performance reviews happen?", "page": 13, "expect": ["June", "December"]},
-  {"question": "What is the dress code for client meetings?", "page": null, "expect": []},
-  {"question": "Does Brightleaf have a pet-friendly office policy?", "page": null, "expect": []},
-  {"question": "What is the company's stock price today?", "page": null, "expect": []}
+  {"category": "basic", "question": "How many days of annual leave do full-time employees get?", "page": 6, "expect": ["24"]},
+  {"category": "basic", "question": "How many unused leave days can I carry over, and by when must I use them?", "page": 6, "expect": ["5", "31 March"]},
+  {"category": "basic", "question": "How long is the probation period?", "page": 4, "expect": ["90"]},
+  {"category": "basic", "question": "What notice do I have to give if I resign after probation?", "page": 4, "expect": ["4 weeks"]},
+  {"category": "basic", "question": "How long can I work from another country each year?", "page": 5, "expect": ["30 days"]},
+  {"category": "basic", "question": "What is the nightly hotel limit when travelling for work?", "page": 10, "expect": ["220"]},
+  {"category": "basic", "question": "How many paid sick days do I get?", "page": 7, "expect": ["10"]},
+  {"category": "basic", "question": "How long is parental leave for a non-birthing parent?", "page": 8, "expect": ["8 weeks"]},
+  {"category": "basic", "question": "What is my yearly learning budget?", "page": 11, "expect": ["1,500"]},
+  {"category": "basic", "question": "Who do I tell if my laptop is stolen, and how quickly?", "page": 12, "expect": ["24 hours"]},
+  {"category": "basic", "question": "How much does the company match on 401(k) contributions?", "page": 9, "expect": ["4%"]},
+  {"category": "basic", "question": "When do performance reviews happen?", "page": 13, "expect": ["June", "December"]},
+  {"category": "basic", "question": "What is the dress code for client meetings?", "page": null, "expect": []},
+  {"category": "basic", "question": "Does Brightleaf have a pet-friendly office policy?", "page": null, "expect": []},
+  {"category": "basic", "question": "What is the company's stock price today?", "page": null, "expect": []},
+
+  {"category": "exception", "question": "What's the hotel limit per night when I'm working in New York?", "page": 10, "expect": ["300"]},
+  {"category": "exception", "question": "I'm a Principal designer. How much notice do I need to give if I resign?", "page": 4, "expect": ["8 weeks"]},
+  {"category": "exception", "question": "How much can I spend on meals per day on an international trip?", "page": 10, "expect": ["85"]},
+
+  {"category": "paraphrase", "question": "How much vacation time do I get each year?", "page": 6, "expect": ["24"]},
+  {"category": "paraphrase", "question": "Will Brightleaf pay anything toward my gym membership?", "page": 9, "expect": ["50"]},
+  {"category": "paraphrase", "question": "My work computer got nicked on the train. What should I do?", "page": 12, "expect": ["24 hours"]},
+  {"category": "paraphrase", "question": "How much of the health insurance cost does the company cover for my kids?", "page": 9, "expect": ["70%"]},
+
+  {"category": "exact_term", "question": "What is the deadline for submitting expenses in Ledgerly?", "page": 10, "expect": ["30 days"]},
+  {"category": "exact_term", "question": "What is the SpeakUp form used for?", "pages": [14, 16], "expect": [["anonymous", "anonymously"]]},
+  {"category": "exact_term", "question": "Is Juneteenth a day off at Brightleaf?", "page": 6, "expect": ["holiday"]},
+  {"category": "exact_term", "question": "Which version of the handbook is this, and when did it take effect?", "page": 1, "expect": ["3.2", "2026"]},
+
+  {"category": "multi_part", "question": "I'm a Director and I'm resigning. How much notice must I give, and how soon must I return my laptop after my last day?", "pages": [4, 15], "needs_all_pages": true, "expect": ["8 weeks", "5 working days"]},
+  {"category": "multi_part", "question": "How long is probation, and can it be extended? If so, by how much?", "page": 4, "expect": ["90", "60"]},
+  {"category": "multi_part", "question": "If I'm off sick for a long time, how much of my salary does short-term disability pay, and for how long?", "page": 7, "expect": ["60%", "12 weeks"]},
+
+  {"category": "followup", "history": ["What is the nightly hotel limit when travelling for work?"], "question": "What about in San Francisco?", "page": 10, "expect": ["300"]},
+  {"category": "followup", "history": ["How long is parental leave for a non-birthing parent?"], "question": "And for the birthing parent?", "page": 8, "expect": ["16 weeks"]},
+  {"category": "followup", "history": ["How many days of annual leave do full-time employees get?"], "question": "And for part-time staff?", "page": 6, "expect": [["prorated", "pro rata", "proportion"]]},
+
+  {"category": "near_miss", "question": "What is the name of Brightleaf's dental insurance provider?", "page": null, "expect": []},
+  {"category": "near_miss", "question": "How many vacation days do interns get?", "page": null, "expect": []},
+  {"category": "near_miss", "question": "What time does the Austin studio open on Saturdays?", "page": null, "expect": []}
 ]

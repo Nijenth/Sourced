@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,24 +50,51 @@ class StopEval(Exception):
     """The provider kept failing; finish with the results gathered so far."""
 
 
-def ask_with_retry(pipeline, question: str, wait: float):
+def ask_with_retry(pipeline, question: str, wait: float, history: list | None = None):
     """Ask once; on a provider error (e.g. a free-tier rate limit) wait and retry once, then stop cleanly."""
     from rag.providers import ProviderError
 
     try:
-        return pipeline.ask(question)
+        return pipeline.ask(question, history)
     except ProviderError as exc:
         print(f"     {exc} Waiting {wait:.0f}s, then retrying once…")
         time.sleep(wait)
         try:
-            return pipeline.ask(question)
+            return pipeline.ask(question, history)
         except ProviderError as exc2:
             raise StopEval(str(exc2)) from exc2
 
 
-def has_all(text: str, expected: list[str]) -> bool:
-    t = text.lower().replace(",", "")
-    return all(e.lower().replace(",", "") in t for e in expected)
+def _plain(text: str) -> str:
+    """Normalise text for fact matching: case, commas, hyphens, every kind of space, and number words ("five" -> "5")."""
+    from rag.citations import _COMPOUND, _NUMBER_WORD, _TRANSLATE, _WORDS
+
+    # Same character table as the quote checker, so scoring and verification treat text alike.
+    text = unicodedata.normalize("NFKC", text).translate(_TRANSLATE).lower()
+    text = _COMPOUND.sub(lambda m: str(_WORDS[m.group(1)] + _WORDS[m.group(2)]), text)
+    text = _NUMBER_WORD.sub(lambda m: str(_WORDS[m.group(1)]), text)
+    text = text.replace(",", "").replace("-", "")
+    return " ".join(text.split())
+
+
+def has_all(text: str, expected: list) -> bool:
+    """Every expected fact must appear. A fact can be a string or a list of acceptable alternatives."""
+    t = _plain(text)
+    return all(any(_plain(alt) in t for alt in ([e] if isinstance(e, str) else e)) for e in expected)
+
+
+def page_metrics(gold: list[int], hit_pages: list[int], needs_all: bool = False) -> tuple[bool, float]:
+    """(retrieval hit, reciprocal rank). Hit means any gold page retrieved, or all of them when needs_all."""
+    found = [p in hit_pages for p in gold]
+    hit = all(found) if needs_all else any(found)
+    rank = next((i + 1 for i, p in enumerate(hit_pages) if p in gold), None)
+    return hit, (1.0 / rank if rank else 0.0)
+
+
+def gold_pages(case: dict) -> list[int]:
+    if "pages" in case:
+        return list(case["pages"] or [])
+    return [] if case.get("page") is None else [case["page"]]
 
 
 def main() -> None:
@@ -82,6 +110,8 @@ def main() -> None:
                     help="seconds to wait between questions (free tiers: Gemini allows ~5 requests/min, so use 13)")
     ap.add_argument("--retry-wait", type=float, default=30.0,
                     help="seconds to wait before retrying a question once after a provider error such as a rate limit")
+    ap.add_argument("--category", action="append",
+                    help="only run these categories (repeatable), e.g. --category followup --category exception")
     args = ap.parse_args()
 
     embedder, chat, top_k = build(args.provider)
@@ -90,55 +120,80 @@ def main() -> None:
     pipeline = RAGPipeline(store, chat, top_k=top_k)
 
     cases = json.loads((ROOT / "eval" / "questions.json").read_text(encoding="utf-8"))
-    rows, totals = [], {"retrieval": [0, 0], "answer": [0, 0], "citation": [0, 0], "refusal": [0, 0], "blocked": [0, 0]}
+    if args.category:
+        cases = [c for c in cases if c.get("category", "basic") in args.category]
+    results: list[dict] = []
     started = time.time()
     stopped = ""
 
     for i, case in enumerate(cases):
         if i and args.delay:
             time.sleep(args.delay)
-        q, page, expect = case["question"], case["page"], case["expect"]
+        q, cat = case["question"], case.get("category", "basic")
+        gold, needs_all = gold_pages(case), case.get("needs_all_pages", False)
         try:
-            a = ask_with_retry(pipeline, q, args.retry_wait)
+            history: list[dict] = []
+            for earlier in case.get("history", []):  # earlier turns of a follow-up conversation
+                prev = ask_with_retry(pipeline, earlier, args.retry_wait, history)
+                history += [{"role": "user", "content": earlier}, {"role": "assistant", "content": prev.text}]
+                if args.delay:
+                    time.sleep(args.delay)
+            a = ask_with_retry(pipeline, q, args.retry_wait, history)
         except StopEval as exc:
             stopped = f"Stopped after {i} of {len(cases)} questions: {exc}"
             print(f"\n{stopped}")
             break
         hit_pages = [h.chunk.page for h in a.hits]
         cited_pages = [c.page for c in a.citations]
-        if page is None:
-            ok = not a.found
-            totals["refusal"][0] += ok
-            totals["refusal"][1] += 1
-            rows.append([q, "not in handbook", "-", "-", "-", "pass" if ok else "FAIL"])
+        r = {"q": q, "cat": cat, "answerable": bool(gold), "a": a}
+        if gold:
+            r["hit"], r["rr"] = page_metrics(gold, hit_pages, needs_all)
+            r["answer_ok"] = a.found and has_all(a.text, case.get("expect", []))
+            r["cite_ok"] = (all if needs_all else any)(p in cited_pages for p in gold)
+            r["blocked"] = a.status in ("unverified", "invalid_output")
+            r["ok"] = r["answer_ok"] and r["cite_ok"]
+            r["expected"] = "p. " + ", ".join(map(str, gold))
         else:
-            r_ok = page in hit_pages
-            a_ok = a.found and has_all(a.text, expect)
-            c_ok = page in cited_pages
-            blocked = a.status in ("unverified", "invalid_output")
-            for key, val in (("retrieval", r_ok), ("answer", a_ok), ("citation", c_ok), ("blocked", blocked)):
-                totals[key][0] += val
-                totals[key][1] += 1
-            rows.append([q, f"p. {page}", *("pass" if v else "FAIL" for v in (r_ok, a_ok, c_ok)), "-"])
-        status = rows[-1]
-        print(f"{'OK ' if 'FAIL' not in status else 'X  '} {q}")
-        if "FAIL" in status:
-            print(f"     answer: {a.text[:160]!r}  hits={hit_pages} cited={cited_pages}  status={a.status}")
+            r["ok"] = not a.found
+            r["expected"] = "not in handbook"
+        results.append(r)
+        label = f"[{cat}] {q}" + (f"  (after: {' / '.join(case['history'])})" if case.get("history") else "")
+        print(f"{'OK ' if r['ok'] else 'X  '} {label}")
+        if not r["ok"]:
+            print(f"     answer: {a.text[:200]!r}  hits={hit_pages} cited={cited_pages}  status={a.status}")
+            if a.search_query != q:
+                print(f"     searched for: {a.search_query!r}")
             if a.reason:
                 print(f"     why: {a.reason}")
+            if a.status in ("unverified", "invalid_output") and a.raw:
+                print(f"     model said: {a.raw[:400]!r}")
 
-    def pct(key):
-        n, d = totals[key]
+    answerable = [r for r in results if r["answerable"]]
+    unanswerable = [r for r in results if not r["answerable"]]
+
+    def frac(items, key):
+        n, d = sum(1 for r in items if r[key]), len(items)
         return f"{n}/{d} ({100 * n / d:.0f}%)" if d else "-"
+
+    def mrr(items):
+        return f"{sum(r['rr'] for r in items) / len(items):.2f}" if items else "-"
 
     model = getattr(chat, "label", args.provider)
     summary = [
-        ("Retrieval: the right page is in the top results", pct("retrieval")),
-        ("Answer contains the expected facts", pct("answer")),
-        ("Answer cites the right page", pct("citation")),
-        ("Says \"not found\" for questions the handbook doesn't cover", pct("refusal")),
-        ("Answerable questions blocked by the citation checks (lower is better)", pct("blocked")),
+        ("Retrieval: the right page is in the top results (Hit@k)", frac(answerable, "hit")),
+        ("Retrieval: how high the right page ranks (MRR, 1.00 = always first)", mrr(answerable)),
+        ("Answer contains the expected facts", frac(answerable, "answer_ok")),
+        ("Answer cites the right page", frac(answerable, "cite_ok")),
+        ("Says \"not found\" for questions the handbook doesn't cover", frac(unanswerable, "ok")),
+        ("Answerable questions blocked by the citation checks (lower is better)", frac(answerable, "blocked")),
     ]
+    categories = sorted({r["cat"] for r in results}, key=lambda c: (c != "basic", c))
+    by_cat = []
+    for c in categories:
+        items = [r for r in results if r["cat"] == c]
+        ans = [r for r in items if r["answerable"]]
+        by_cat.append((c, frac(items, "ok"), frac(ans, "hit") if ans else "-", mrr(ans)))
+
     lines = [
         "# Evaluation results",
         "",
@@ -150,15 +205,22 @@ def main() -> None:
         "| --- | --- |",
         *[f"| {k} | {v} |" for k, v in summary],
         "",
-        "| Question | Expected | Retrieval | Answer | Citation | Refusal |",
-        "| --- | --- | --- | --- | --- | --- |",
-        *["| " + " | ".join(r) + " |" for r in rows],
+        "| Category | Fully correct | Retrieval hit | MRR |",
+        "| --- | --- | --- | --- |",
+        *[f"| {c} | {ok} | {hit} | {m} |" for c, ok, hit, m in by_cat],
+        "",
+        "| Category | Question | Expected | Result | Status |",
+        "| --- | --- | --- | --- | --- |",
+        *[f"| {r['cat']} | {r['q']} | {r['expected']} | {'pass' if r['ok'] else 'FAIL'} | {r['a'].status} |" for r in results],
         "",
     ]
     Path(args.out).write_text("\n".join(lines), encoding="utf-8")
     print()
     for k, v in summary:
         print(f"{v:>12}  {k}")
+    print("\nBy category (fully correct = right facts and right page, or a correct refusal):")
+    for c, ok, hit, m in by_cat:
+        print(f"  {c:<12} {ok:>12}   retrieval {hit:>12}   MRR {m}")
     print(f"\nReport written to {args.out}")
 
 

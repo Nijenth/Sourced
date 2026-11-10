@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 
-from . import anthropic_provider, gemini_provider, ollama_provider, openai_provider
+from . import anthropic_provider, gemini_provider, groq_provider, ollama_provider, openai_provider
 from .base import ChatModel, Embedder, Env, Provider, ProviderError
 
 # Order = order in the model picker.
@@ -16,6 +16,7 @@ PROVIDERS: dict[str, Provider] = {
         openai_provider.PROVIDER,
         anthropic_provider.PROVIDER,
         gemini_provider.PROVIDER,
+        groq_provider.PROVIDER,
         ollama_provider.PROVIDER,
     )
 }
