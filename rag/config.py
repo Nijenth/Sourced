@@ -40,7 +40,7 @@ def load_settings() -> Settings:
     return Settings(
         top_k=_int("TOP_K", 5),
         retrieval_mode=_mode(os.getenv("RETRIEVAL_MODE", "hybrid")),
-        reranker=(os.getenv("RERANKER", "none").strip().lower() or "none"),
+        reranker=(os.getenv("RERANKER", "cross-encoder").strip().lower() or "none"),
         rerank_model=os.getenv("RERANK_MODEL", "").strip(),
         rerank_pool=max(1, _int("RERANK_POOL", 20)),
         max_questions_per_session=_int("MAX_QUESTIONS_PER_SESSION", 25),

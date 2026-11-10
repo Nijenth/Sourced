@@ -213,6 +213,8 @@ def main() -> None:
     ap.add_argument("--retrieval-only", action="store_true",
                     help="compare dense, bm25 and hybrid search without calling any AI model (free and fast)")
     args = ap.parse_args()
+    if args.provider == "offline" and "--rerank" not in sys.argv:
+        args.rerank = "none"  # offline runs never download anything unless asked to
     if args.retrieval_only:
         run_ablation(args, s.top_k, s.rerank_pool, s.rerank_model)
         return

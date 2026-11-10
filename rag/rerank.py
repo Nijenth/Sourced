@@ -9,13 +9,17 @@ reranker, or a chat model used as a reranker) can be added in their own class la
 """
 from __future__ import annotations
 
+import os
 from dataclasses import replace
+from pathlib import Path
 from typing import Protocol
 
 from .providers.base import ProviderError, import_sdk
 from .store import Hit
 
 DEFAULT_CROSS_ENCODER = "Xenova/ms-marco-MiniLM-L-6-v2"  # ~80 MB, English, runs on CPU via onnxruntime
+# Keep the downloaded model somewhere permanent (fastembed's default is the system temp folder, which gets cleaned).
+MODEL_CACHE = Path(os.getenv("RERANK_CACHE_DIR") or Path.home() / ".cache" / "rag-chatbot" / "fastembed")
 RERANKERS = ("none", "cross-encoder")
 
 
@@ -30,9 +34,10 @@ class CrossEncoderReranker:
 
     def __init__(self, model: str = DEFAULT_CROSS_ENCODER, encoder=None):
         if encoder is None:
+            os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")  # harmless Windows cache warning
             cross = import_sdk("fastembed.rerank.cross_encoder", "fastembed", "The cross-encoder reranker")
             try:
-                encoder = cross.TextCrossEncoder(model_name=model)
+                encoder = cross.TextCrossEncoder(model_name=model, cache_dir=str(MODEL_CACHE))
             except Exception as exc:  # download or model-name problems
                 raise ProviderError(f"Couldn't load the reranker model '{model}'. Check the name and your connection.") from exc
         self._encoder = encoder

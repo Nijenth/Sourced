@@ -1,6 +1,6 @@
 # Evaluation results
 
-Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-text · retrieval: hybrid · rerank: cross-encoder · top-k: 5 · run 2026-11-11 01:01 · 393s
+Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-text · retrieval: hybrid · rerank: cross-encoder · top-k: 5 · run 2026-11-11 01:10 · 408s
 
 | Check | Score |
 | --- | --- |
@@ -41,7 +41,7 @@ Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-
 | exception | What's the hotel limit per night when I'm working in New York? | p. 10 | pass | answered |
 | exception | I'm a Principal designer. How much notice do I need to give if I resign? | p. 4 | pass | answered |
 | exception | How much can I spend on meals per day on an international trip? | p. 10 | pass | answered |
-| paraphrase | How much vacation time do I get each year? | p. 6 | pass | answered (partial) |
+| paraphrase | How much vacation time do I get each year? | p. 6 | pass | answered |
 | paraphrase | Will Brightleaf pay anything toward my gym membership? | p. 9 | pass | answered |
 | paraphrase | My work computer got nicked on the train. What should I do? | p. 12 | pass | answered |
 | paraphrase | How much of the health insurance cost does the company cover for my kids? | p. 9 | pass | answered |

@@ -425,7 +425,8 @@ if prompt:
     else:
         history = [{"role": m["role"], "content": m["content"]} for m in messages if not m.get("error")]
         try:
-            reranker = get_reranker(settings.reranker, settings.rerank_model)
+            # Offline test mode never downloads anything, so it skips reranking.
+            reranker = None if settings.fake_mode else get_reranker(settings.reranker, settings.rerank_model)
         except ProviderError as exc:
             st.warning(f"{exc} Answering without reranking.")
             reranker = None
