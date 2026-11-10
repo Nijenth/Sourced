@@ -1,6 +1,6 @@
 # Evaluation results
 
-Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-text · retrieval: hybrid · top-k: 5 · run 2026-11-11 00:28 · 329s
+Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-text · retrieval: hybrid · top-k: 5 · run 2026-11-11 00:41 · 414s
 
 | Check | Score |
 | --- | --- |
@@ -9,15 +9,15 @@ Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-
 | Answer contains the expected facts | 28/29 (97%) |
 | Answer cites the right page | 28/29 (97%) |
 | Says "not found" for questions the handbook doesn't cover | 6/6 (100%) |
-| Answerable questions blocked by the citation checks (lower is better) | 0/29 (0%) |
+| Answerable questions blocked by the citation checks (lower is better) | 1/29 (3%) |
 
 | Category | Fully correct | Retrieval hit | MRR |
 | --- | --- | --- | --- |
 | basic | 15/15 (100%) | 12/12 (100%) | 0.92 |
 | exact_term | 4/4 (100%) | 4/4 (100%) | 0.75 |
 | exception | 3/3 (100%) | 3/3 (100%) | 0.83 |
-| followup | 2/3 (67%) | 3/3 (100%) | 1.00 |
-| multi_part | 3/3 (100%) | 3/3 (100%) | 1.00 |
+| followup | 3/3 (100%) | 3/3 (100%) | 1.00 |
+| multi_part | 2/3 (67%) | 3/3 (100%) | 1.00 |
 | near_miss | 3/3 (100%) | - | - |
 | paraphrase | 4/4 (100%) | 4/4 (100%) | 1.00 |
 
@@ -31,7 +31,7 @@ Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-
 | basic | What is the nightly hotel limit when travelling for work? | p. 10 | pass | answered |
 | basic | How many paid sick days do I get? | p. 7 | pass | answered |
 | basic | How long is parental leave for a non-birthing parent? | p. 8 | pass | answered |
-| basic | What is my yearly learning budget? | p. 11 | pass | answered |
+| basic | What is my yearly learning budget? | p. 11 | pass | answered (partial) |
 | basic | Who do I tell if my laptop is stolen, and how quickly? | p. 12 | pass | answered |
 | basic | How much does the company match on 401(k) contributions? | p. 9 | pass | answered |
 | basic | When do performance reviews happen? | p. 13 | pass | answered |
@@ -49,12 +49,12 @@ Model: Ollama (qwen3.6:35b-a3b-q4_K_M, local) · embeddings: ollama:nomic-embed-
 | exact_term | What is the SpeakUp form used for? | p. 14, 16 | pass | answered |
 | exact_term | Is Juneteenth a day off at Brightleaf? | p. 6 | pass | answered |
 | exact_term | Which version of the handbook is this, and when did it take effect? | p. 1 | pass | answered |
-| multi_part | I'm a Director and I'm resigning. How much notice must I give, and how soon must I return my laptop after my last day? | p. 4, 15 | pass | answered |
+| multi_part | I'm a Director and I'm resigning. How much notice must I give, and how soon must I return my laptop after my last day? | p. 4, 15 | FAIL | unverified |
 | multi_part | How long is probation, and can it be extended? If so, by how much? | p. 4 | pass | answered |
 | multi_part | If I'm off sick for a long time, how much of my salary does short-term disability pay, and for how long? | p. 7 | pass | answered |
 | followup | What about in San Francisco? | p. 10 | pass | answered |
 | followup | And for the birthing parent? | p. 8 | pass | answered |
-| followup | And for part-time staff? | p. 6 | FAIL | not_found |
+| followup | And for part-time staff? | p. 6 | pass | answered (partial) |
 | near_miss | What is the name of Brightleaf's dental insurance provider? | not in handbook | pass | not_found |
 | near_miss | How many vacation days do interns get? | not in handbook | pass | not_found |
 | near_miss | What time does the Austin studio open on Saturdays? | not in handbook | pass | not_found |

@@ -241,7 +241,8 @@ def main() -> None:
         label = f"[{cat}] {q}" + (f"  (after: {' / '.join(case['history'])})" if case.get("history") else "")
         print(f"{'OK ' if r['ok'] else 'X  '} {label}")
         if not r["ok"]:
-            print(f"     answer: {a.text[:200]!r}  hits={hit_pages} cited={cited_pages}  status={a.status}")
+            print(f"     answer: {a.text[:200]!r}  hits={hit_pages} cited={cited_pages}  status={a.status}"
+                  + ("  (partial)" if a.partial else ""))
             if a.search_query != q:
                 print(f"     searched for: {a.search_query!r}")
             if a.reason:
@@ -292,7 +293,7 @@ def main() -> None:
         "",
         "| Category | Question | Expected | Result | Status |",
         "| --- | --- | --- | --- | --- |",
-        *[f"| {r['cat']} | {r['q']} | {r['expected']} | {'pass' if r['ok'] else 'FAIL'} | {r['a'].status} |" for r in results],
+        *[f"| {r['cat']} | {r['q']} | {r['expected']} | {'pass' if r['ok'] else 'FAIL'} | {r['a'].status}{' (partial)' if r['a'].partial else ''} |" for r in results],
         "",
     ]
     Path(args.out).write_text("\n".join(lines), encoding="utf-8")

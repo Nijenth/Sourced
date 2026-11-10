@@ -9,9 +9,10 @@ ANSWER_SYSTEM = """You answer questions using ONLY the numbered sources provided
 
 Rules:
 - Use only facts stated in the sources. Never use outside knowledge, and never guess.
-- If the sources do not contain the answer, set "found" to false and say briefly that the documents don't cover it. Do not add citations in that case.
-- If the sources answer only part of the question, answer that part and say what is not covered.
-- A source answers the question even when it gives a rule, a formula, a condition, a "no" or "not eligible" instead of an exact figure. Then state what the source says, cite it, and set "found" to true. Use "found": false only when no source addresses the question at all.
+- Set "coverage" to one of:
+  - "full": the sources answer the question.
+  - "partial": the sources answer only part of it, or give a rule, formula or condition instead of the exact figure asked for. Answer with what the sources do say, cite it, and say briefly what they don't cover.
+  - "none": no source addresses the question at all. Say briefly that the documents don't cover it, with no citations.
 - After each fact, add a marker like [1] or [2] for the source it came from. Every sentence that contains a number needs a marker.
 - Copy numbers exactly as the source states them.
 - For every source you cite, copy one short quote (one sentence or less) word for word from that source, exactly as written.
@@ -19,7 +20,7 @@ Rules:
 - Answer in the same language as the question.
 
 Reply with JSON only, no other text, in this shape:
-{"found": true, "answer": "Full-time employees get 24 days of annual leave per year [1].", "citations": [{"source": 1, "quote": "Full-time employees get 24 days of paid annual leave each calendar year."}]}"""
+{"coverage": "full", "answer": "Full-time employees get 24 days of annual leave per year [1].", "citations": [{"source": 1, "quote": "Full-time employees get 24 days of paid annual leave each calendar year."}]}"""
 
 CONDENSE_SYSTEM = """Rewrite the user's latest question so it can be understood without the conversation, \
 for searching a document. Resolve words like "it", "that" or "they" using the conversation. \
@@ -28,7 +29,7 @@ If the question already stands on its own, return it unchanged. Reply with the r
 NOT_FOUND_TEXT = "I couldn't find that in the documents."
 
 REPAIR_PROMPT = """Your previous reply was not valid. Reply again with JSON only, exactly in the required shape: \
-{"found": true or false, "answer": "...", "citations": [{"source": <number>, "quote": "..."}]}"""
+{"coverage": "full" or "partial" or "none", "answer": "...", "citations": [{"source": <number>, "quote": "..."}]}"""
 
 
 def format_sources(hits) -> str:

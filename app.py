@@ -235,6 +235,8 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
             st.caption(f"Searched the closest passages ({pages}) and none of them answer this.")
         return
 
+    if msg.get("partial"):
+        st.caption("The documents only partly answer this. Check the sources below.")
     citations = msg.get("citations", [])
     if not citations:
         return
@@ -254,6 +256,7 @@ def answer_to_message(answer) -> dict:
         "role": "assistant",
         "content": answer.text,
         "found": answer.found,
+        "partial": answer.partial,
         "status": answer.status,
         "reason": answer.reason,
         "passages": [

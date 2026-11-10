@@ -71,6 +71,7 @@ class Answer:
     reason: str = ""  # short explanation when the answer was blocked
     attempts: int = 1  # model calls used to produce the answer
     raw: str = ""  # the model's reply as received, for debugging and evaluation (not shown to users)
+    partial: bool = False  # the documents answer only part of the question (or give a rule, not a figure)
 
 
 class OutputError(ValueError):
@@ -119,11 +120,24 @@ def parse_model_json(raw: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def validate_reply(data: dict) -> tuple[bool, str, list[tuple[int, str]]]:
-    """Check the reply's shape strictly. Returns (found, answer, [(source, quote), ...])."""
-    found = data.get("found")
-    if not isinstance(found, bool):
-        raise OutputError('"found" must be true or false')
+COVERAGE = ("full", "partial", "none")
+
+
+def validate_reply(data: dict) -> tuple[bool, bool, str, list[tuple[int, str]]]:
+    """Check the reply's shape strictly. Returns (found, partial, answer, [(source, quote), ...]).
+
+    Replies say "coverage": "full" | "partial" | "none". The older "found": true/false is still accepted.
+    """
+    if "coverage" in data:
+        coverage = data.get("coverage")
+        if not isinstance(coverage, str) or coverage.strip().lower() not in COVERAGE:
+            raise OutputError('"coverage" must be "full", "partial" or "none"')
+        coverage = coverage.strip().lower()
+        found, partial = coverage != "none", coverage == "partial"
+    else:
+        found, partial = data.get("found"), False
+        if not isinstance(found, bool):
+            raise OutputError('"coverage" must be "full", "partial" or "none"')
     answer = data.get("answer")
     if not isinstance(answer, str):
         raise OutputError('"answer" must be text')
@@ -144,7 +158,7 @@ def validate_reply(data: dict) -> tuple[bool, str, list[tuple[int, str]]]:
         if not isinstance(quote, str):
             raise OutputError('"quote" must be text')
         pairs.append((source, quote))
-    return found, answer.strip(), pairs
+    return found, partial, answer.strip(), pairs
 
 
 # Models stitch quotes from pieces with "..." or table cells with "|". Each piece must be in the source.
@@ -302,7 +316,7 @@ def _build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
     if data is None:
         return _blocked(INVALID_OUTPUT, "The model's reply wasn't in the required JSON format.", hits, search_query)
     try:
-        found, text, pairs = validate_reply(data)
+        found, partial, text, pairs = validate_reply(data)
     except OutputError as exc:
         return _blocked(INVALID_OUTPUT, f"The model's reply was malformed: {exc}.", hits, search_query)
 
@@ -364,4 +378,5 @@ def _build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
         hit = hits[n - 1]
         located = quotes.get(n)
         citations.append(Citation(n, hit.chunk.source, hit.chunk.page, located or snippet(hit.chunk.text), located is not None))
-    return Answer(text=text, found=True, citations=citations, hits=hits, search_query=search_query, status=ANSWERED)
+    return Answer(text=text, found=True, citations=citations, hits=hits, search_query=search_query, status=ANSWERED,
+                  partial=partial)

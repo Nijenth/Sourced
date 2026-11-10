@@ -282,6 +282,36 @@ def test_plain_text_reply_is_rejected():
     assert not a.found and a.status == INVALID_OUTPUT
 
 
+def _coverage_reply(coverage, answer="Part-time staff get a pro-rated amount [1].", citations=None):
+    return json.dumps({"coverage": coverage, "answer": answer,
+                       "citations": citations if citations is not None else [{"source": 1, "quote": REAL_QUOTE}]})
+
+
+def test_full_coverage_is_a_normal_answer():
+    a = build_answer(_coverage_reply("full", "You get 24 days [1]."), _hits(SOURCE), "q")
+    assert a.status == ANSWERED and a.found and not a.partial
+
+
+def test_partial_coverage_is_shown_with_citations_and_flagged():
+    a = build_answer(_coverage_reply("partial", "Full-time staff get 24 days [1]; the handbook doesn't give a figure for "
+                                                "part-time staff."), _hits(SOURCE), "q")
+    assert a.status == ANSWERED and a.found and a.partial and a.citations
+
+
+def test_partial_coverage_still_needs_valid_evidence():
+    a = build_answer(_coverage_reply("partial", "Part-time staff get 30 days [1]."), _hits(SOURCE), "q")
+    assert a.status == UNVERIFIED  # 30 is not in the source
+
+
+def test_no_coverage_is_not_found():
+    a = build_answer(_coverage_reply("none", "The documents don't cover this.", []), _hits(SOURCE), "q")
+    assert a.status == NOT_FOUND and not a.found
+
+
+def test_unknown_coverage_value_is_invalid():
+    assert build_answer(_coverage_reply("mostly"), _hits(SOURCE), "q").status == INVALID_OUTPUT
+
+
 def test_found_must_be_a_real_boolean():
     raw = json.dumps({"found": "false", "answer": "You get 24 days [1].", "citations": []})
     assert build_answer(raw, _hits(SOURCE), "q").status == INVALID_OUTPUT
