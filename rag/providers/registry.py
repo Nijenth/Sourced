@@ -6,15 +6,21 @@ from __future__ import annotations
 
 import os
 
-from . import anthropic_provider, gemini_provider, openai_provider
+from . import anthropic_provider, gemini_provider, ollama_provider, openai_provider
 from .base import ChatModel, Embedder, Env, Provider, ProviderError
 
 # Order = order in the model picker.
 PROVIDERS: dict[str, Provider] = {
-    p.name: p for p in (openai_provider.PROVIDER, anthropic_provider.PROVIDER, gemini_provider.PROVIDER)
+    p.name: p
+    for p in (
+        openai_provider.PROVIDER,
+        anthropic_provider.PROVIDER,
+        gemini_provider.PROVIDER,
+        ollama_provider.PROVIDER,
+    )
 }
 # Order tried for embeddings when EMBEDDING_PROVIDER isn't set.
-EMBEDDING_ORDER: tuple[str, ...] = ("openai", "gemini")
+EMBEDDING_ORDER: tuple[str, ...] = ("openai", "gemini", "ollama")
 ALIASES = {"claude": "anthropic", "google": "gemini"}
 
 
