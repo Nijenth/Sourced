@@ -11,7 +11,7 @@ Rules:
 - Use only facts stated in the sources. Never use outside knowledge, and never guess.
 - If the sources do not contain the answer, set "found" to false and say briefly that the documents don't cover it. Do not add citations in that case.
 - If the sources answer only part of the question, answer that part and say what is not covered.
-- If the sources give a rule or method instead of an exact figure (for example "pro-rated based on contracted hours"), that rule is the answer: state it, cite it, and set "found" to true.
+- A source answers the question even when it gives a rule, a formula, a condition, a "no" or "not eligible" instead of an exact figure. Then state what the source says, cite it, and set "found" to true. Use "found": false only when no source addresses the question at all.
 - After each fact, add a marker like [1] or [2] for the source it came from. Every sentence that contains a number needs a marker.
 - Copy numbers exactly as the source states them.
 - For every source you cite, copy one short quote (one sentence or less) word for word from that source, exactly as written.
@@ -39,11 +39,13 @@ def format_sources(hits) -> str:
 
 
 class RAGPipeline:
-    def __init__(self, store: VectorStore, chat: ChatModel, top_k: int = 5, min_score: float = 0.0):
+    def __init__(self, store: VectorStore, chat: ChatModel, top_k: int = 5, min_score: float = 0.0,
+                 retrieval_mode: str = "hybrid"):
         self.store = store
         self.chat = chat
         self.top_k = top_k
         self.min_score = min_score
+        self.retrieval_mode = retrieval_mode
 
     def standalone_question(self, question: str, history: list[dict]) -> str:
         """Turn a follow-up like "what about part-time staff?" into a full question for retrieval."""
@@ -61,7 +63,7 @@ class RAGPipeline:
 
     def ask(self, question: str, history: list[dict] | None = None) -> Answer:
         query = self.standalone_question(question, history or [])
-        hits = [h for h in self.store.search(query, self.top_k) if h.score >= self.min_score]
+        hits = [h for h in self.store.search(query, self.top_k, mode=self.retrieval_mode) if h.score >= self.min_score]
         if not hits:
             return Answer(text=NOT_FOUND_TEXT, found=False, hits=[], search_query=query, status=NOT_FOUND)
 

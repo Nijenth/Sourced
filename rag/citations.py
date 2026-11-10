@@ -7,11 +7,13 @@ blocked and the user sees the closest passages instead.
 from __future__ import annotations
 
 import json
+from collections import Counter
 import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from .documents import collapse, split_sentences
+from .lexical import tokenize
 from .store import Hit
 
 # Answer statuses
@@ -145,22 +147,72 @@ def validate_reply(data: dict) -> tuple[bool, str, list[tuple[int, str]]]:
     return found, answer.strip(), pairs
 
 
-_ELLIPSIS = re.compile(r"\s*(?:\.{3,}|\u2026)\s*")
+# Models stitch quotes from pieces with "..." or table cells with "|". Each piece must be in the source.
+_ELLIPSIS = re.compile(r"\s*(?:\.{3,}|\u2026|\|)\s*")
 
 
 def locate_quote(quote: str, source_text: str, min_ratio: float = 0.85) -> str | None:
-    """Like _locate_one, but also accepts quotes stitched from parts with "..." (each part must be found)."""
-    parts = [p for p in _ELLIPSIS.split(quote) if len(_norm(p)) >= 8]
-    if len(parts) <= 1:
-        return _locate_one(quote, source_text, min_ratio)
+    """Like _locate_one, but also accepts quotes stitched from pieces (each piece must be found):
+    parts joined with "..." or "|", and several sentences that skip sentences in between.
+
+    Known limitation: this proves every piece is in the source, not that the pieces belong together.
+    The number check in build_answer still applies to the answer itself.
+    """
+    whole = _locate_one(quote, source_text, min_ratio)
+    if whole is not None:
+        return whole
+    parts = [s for p in _ELLIPSIS.split(quote) for s in split_sentences(collapse(p)) if len(_norm(s)) >= 8]
+    if not parts:
+        return None
     found: list[str] = []
     for part in parts:
         located = _locate_one(part, source_text, min_ratio)
         if located is None:
-            return None  # any invented part fails the whole quote
+            found = []
+            break
         if located not in found:
             found.append(located)
-    return " \u2026 ".join(found)
+    if found:
+        return " \u2026 ".join(found)
+    # Last resort for quotes rebuilt in the model's own layout (typically table rows): check the content,
+    # not the order. Nearly all meaningful words and every number must be in the source.
+    return _covered(quote, source_text)
+
+
+MIN_COVERAGE = 0.9
+# A missing negation flips the meaning ("can be extended" vs "can never be extended"), so it is never allowed.
+NEGATIONS = frozenset({"not", "no", "never", "none", "cannot", "nor", "neither", "without", "nothing", "nobody"})
+
+
+def _content_words(text: str) -> list[str]:
+    return tokenize(re.sub(r"n['\u2019]t\b", " not", text, flags=re.IGNORECASE))
+
+
+def _covered(quote: str, source_text: str) -> str | None:
+    """Layout-insensitive check, only for table-like fragments (no full sentences, no negations).
+
+    Full sentences must match closely (above). Known limitation: inside a table row, a value swapped for
+    another value from the same table can pass this check; an LLM faithfulness check would be needed for that.
+    """
+    words = _content_words(quote)
+    if re.search(r"[.!?](?:\s|$)", quote) or any(w in NEGATIONS for w in words):
+        return None
+    if len(words) < 4 or not numbers_in(quote) <= numbers_in(source_text):
+        return None
+    source_words = set(_content_words(source_text))
+    missing = [w for w in words if w not in source_words]
+    if any(w in NEGATIONS for w in missing) or 1 - len(missing) / len(words) < MIN_COVERAGE:
+        return None
+    # Show the source's own words: the 1-3 sentence window that contains the most of the quote's words.
+    sentences = split_sentences(collapse(source_text))
+    best, best_hits = None, -1
+    for size in (1, 2, 3):
+        for i in range(len(sentences) - size + 1):
+            window = " ".join(sentences[i : i + size])
+            hits = len(set(words) & set(tokenize(window)))
+            if hits > best_hits:
+                best, best_hits = window, hits
+    return snippet(best or source_text, 400)
 
 
 def _locate_one(quote: str, source_text: str, min_ratio: float = 0.85) -> str | None:
@@ -185,16 +237,41 @@ def _locate_one(quote: str, source_text: str, min_ratio: float = 0.85) -> str | 
         window = collapse(source_text)
         return window if q_numbers <= numbers_in(window) else None
 
+    q_contexts, q_negations = _number_contexts(quote), _negations(quote)
     best, best_ratio = None, 0.0
     for size in (1, 2, 3):
         for i in range(len(sentences) - size + 1):
             window = " ".join(sentences[i : i + size])
             if not q_numbers <= numbers_in(window):
                 continue
+            # "up to 90 days" must not match "up to 60 days" just because "90" appears elsewhere nearby.
+            if not q_contexts <= _number_contexts(window):
+                continue
+            # An added or dropped "not" flips the meaning even when almost every character matches.
+            w_negations = _negations(window)
+            if (q_negations != w_negations) if size == 1 else (q_negations - w_negations):
+                continue
             ratio = SequenceMatcher(None, q, _norm(window)).ratio()
             if ratio > best_ratio:
                 best, best_ratio = window, ratio
     return best if best_ratio >= min_ratio else None
+
+
+_CONTEXT_TOKEN = re.compile(r"[a-z]+|\d+(?:[.,]\d+)*")
+
+
+def _number_contexts(text: str) -> set[tuple[str, str]]:
+    """(previous word, number) pairs, e.g. "up to 60 days" -> {("to", "60")}."""
+    tokens = _CONTEXT_TOKEN.findall(_norm(text))
+    pairs = set()
+    for i, t in enumerate(tokens):
+        if t[0].isdigit():
+            pairs.add((tokens[i - 1] if i else "", t.replace(",", "").lstrip("0") or "0"))
+    return pairs
+
+
+def _negations(text: str) -> Counter:
+    return Counter(w for w in _content_words(text) if w in NEGATIONS)
 
 
 def snippet(text: str, limit: int = 280) -> str:

@@ -97,6 +97,82 @@ def gold_pages(case: dict) -> list[int]:
     return [] if case.get("page") is None else [case["page"]]
 
 
+def load_cases(categories: list[str] | None) -> list[dict]:
+    cases = json.loads((ROOT / "eval" / "questions.json").read_text(encoding="utf-8"))
+    return [c for c in cases if not categories or c.get("category", "basic") in categories]
+
+
+def run_ablation(args, top_k: int) -> None:
+    """Retrieval-only comparison of search modes: no chat model is called, so it is free and quick."""
+    from rag.providers import ProviderError, make_embedder
+    from rag.store import SEARCH_MODES
+
+    env = dict(os.environ)
+    if args.provider == "offline":
+        env["RAG_OFFLINE_MODE"] = "1"
+    try:
+        embedder = make_embedder(env)
+    except ProviderError as exc:
+        sys.exit(f"{exc} (or use --provider offline)")
+    store = VectorStore(embedder, "ablation")
+    store.add(chunk_pages(load_pdf(PDF.read_bytes(), PDF.name)))
+
+    all_cases = load_cases(args.category)
+    # Follow-ups need the chat model to rewrite them first, and unanswerable questions have no right page.
+    cases = [c for c in all_cases if gold_pages(c) and not c.get("history")]
+    skipped = len(all_cases) - len(cases)
+
+    results = {}  # mode -> list of (case, hit, reciprocal rank, pages)
+    for mode in SEARCH_MODES:
+        rows = []
+        for c in cases:
+            pages = [h.chunk.page for h in store.search(c["question"], top_k, mode=mode)]
+            hit, rr = page_metrics(gold_pages(c), pages, c.get("needs_all_pages", False))
+            rows.append((c, hit, rr, pages))
+        results[mode] = rows
+
+    def score(rows):
+        n = len(rows) or 1
+        return f"{sum(r[1] for r in rows)}/{len(rows)} ({100 * sum(r[1] for r in rows) / n:.0f}%)", \
+            f"{sum(r[2] for r in rows) / n:.2f}"
+
+    cats = sorted({c.get("category", "basic") for c in cases}, key=lambda c: (c != "basic", c))
+    header = "| Search | Hit@k | MRR | " + " | ".join(cats) + " |"
+    table = [header, "|" + " --- |" * (3 + len(cats))]
+    print(f"\nRetrieval-only comparison · embeddings: {embedder.name} · top-k: {top_k} · "
+          f"{len(cases)} questions ({skipped} follow-up/unanswerable skipped)\n")
+    print(f"  {'search':<8} {'Hit@k':>12} {'MRR':>6}   per-category hits")
+    for mode, rows in results.items():
+        hit, mrr_ = score(rows)
+        per_cat = []
+        for cat in cats:
+            cr = [r for r in rows if r[0].get("category", "basic") == cat]
+            per_cat.append(f"{sum(r[1] for r in cr)}/{len(cr)}")
+        print(f"  {mode:<8} {hit:>12} {mrr_:>6}   " + "  ".join(f"{c}:{p}" for c, p in zip(cats, per_cat)))
+        table.append(f"| {mode} | {hit} | {mrr_} | " + " | ".join(per_cat) + " |")
+
+    # Questions where the methods disagree are the interesting ones.
+    diffs = []
+    for i, c in enumerate(cases):
+        outcomes = {m: results[m][i][1] for m in SEARCH_MODES}
+        if len(set(outcomes.values())) > 1:
+            found = ", ".join(m for m, ok in outcomes.items() if ok) or "none"
+            diffs.append(f"- {c['question']} (right page found by: {found}; "
+                         + "; ".join(f"{m} {results[m][i][3]}" for m in SEARCH_MODES) + ")")
+    if diffs:
+        print("\nWhere the methods disagree:")
+        print("\n".join("  " + d for d in diffs))
+
+    out = ROOT / "eval" / "ablation.md"
+    out.write_text("\n".join([
+        "# Retrieval ablation", "",
+        f"Embeddings: {embedder.name} · top-k: {top_k} · {dt.datetime.now():%Y-%m-%d %H:%M} · "
+        f"{len(cases)} answerable questions (follow-ups skipped: they need the chat model to rewrite them).", "",
+        *table, "", "## Where the methods disagree", "", *(diffs or ["(none)"]), "",
+    ]), encoding="utf-8")
+    print(f"\nReport written to {out}")
+
+
 def main() -> None:
     s = load_settings()
     from rag.providers import PROVIDERS, chat_provider_names
@@ -112,16 +188,21 @@ def main() -> None:
                     help="seconds to wait before retrying a question once after a provider error such as a rate limit")
     ap.add_argument("--category", action="append",
                     help="only run these categories (repeatable), e.g. --category followup --category exception")
+    ap.add_argument("--retrieval", choices=["dense", "bm25", "hybrid"], default=s.retrieval_mode,
+                    help="search method (default: RETRIEVAL_MODE setting, else hybrid)")
+    ap.add_argument("--retrieval-only", action="store_true",
+                    help="compare dense, bm25 and hybrid search without calling any AI model (free and fast)")
     args = ap.parse_args()
+    if args.retrieval_only:
+        run_ablation(args, s.top_k)
+        return
 
     embedder, chat, top_k = build(args.provider)
     store = VectorStore(embedder, "eval")
     store.add(chunk_pages(load_pdf(PDF.read_bytes(), PDF.name)))
-    pipeline = RAGPipeline(store, chat, top_k=top_k)
+    pipeline = RAGPipeline(store, chat, top_k=top_k, retrieval_mode=args.retrieval)
 
-    cases = json.loads((ROOT / "eval" / "questions.json").read_text(encoding="utf-8"))
-    if args.category:
-        cases = [c for c in cases if c.get("category", "basic") in args.category]
+    cases = load_cases(args.category)
     results: list[dict] = []
     started = time.time()
     stopped = ""
@@ -197,7 +278,7 @@ def main() -> None:
     lines = [
         "# Evaluation results",
         "",
-        f"Model: {model} · embeddings: {embedder.name} · top-k: {top_k} · "
+        f"Model: {model} · embeddings: {embedder.name} · retrieval: {args.retrieval} · top-k: {top_k} · "
         f"run {dt.datetime.now():%Y-%m-%d %H:%M} · {time.time() - started:.0f}s",
         "",
         *([f"**Partial run.** {stopped}", ""] if stopped else []),

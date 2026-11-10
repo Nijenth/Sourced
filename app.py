@@ -415,7 +415,7 @@ if prompt:
         reply = {"role": "assistant", "content": "The demo has reached today's question limit. Please try again tomorrow.", "error": True}
     else:
         history = [{"role": m["role"], "content": m["content"]} for m in messages if not m.get("error")]
-        pipeline = RAGPipeline(store, get_chat(provider), top_k=settings.top_k)
+        pipeline = RAGPipeline(store, get_chat(provider), top_k=settings.top_k, retrieval_mode=settings.retrieval_mode)
         with st.chat_message("assistant"):
             with st.spinner("Searching the documents…"):
                 try:

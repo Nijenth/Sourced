@@ -15,9 +15,15 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _mode(value: str) -> str:
+    value = value.strip().lower()
+    return value if value in ("dense", "bm25", "hybrid") else "hybrid"
+
+
 @dataclass(frozen=True)
 class Settings:
     top_k: int
+    retrieval_mode: str
     max_questions_per_session: int
     max_questions_per_day: int
     max_upload_files: int
@@ -30,6 +36,7 @@ class Settings:
 def load_settings() -> Settings:
     return Settings(
         top_k=_int("TOP_K", 5),
+        retrieval_mode=_mode(os.getenv("RETRIEVAL_MODE", "hybrid")),
         max_questions_per_session=_int("MAX_QUESTIONS_PER_SESSION", 25),
         max_questions_per_day=_int("MAX_QUESTIONS_PER_DAY", 300),
         max_upload_files=_int("MAX_UPLOAD_FILES", 3),

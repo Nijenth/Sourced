@@ -1,4 +1,4 @@
-"""A thin wrapper over an in-memory Chroma collection."""
+"""Search over document chunks: dense (Chroma embeddings), keyword (BM25), or both fused (hybrid)."""
 from __future__ import annotations
 
 import re
@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import chromadb
 
 from .documents import Chunk
+from .lexical import BM25, reciprocal_rank_fusion
 from .providers import Embedder
 
 _client = None
@@ -23,7 +24,10 @@ def _chroma():
 @dataclass(frozen=True)
 class Hit:
     chunk: Chunk
-    score: float  # cosine similarity, higher is closer
+    score: float  # higher is closer: cosine similarity (dense), BM25 score (bm25) or RRF score (hybrid)
+
+
+SEARCH_MODES = ("dense", "bm25", "hybrid")
 
 
 class VectorStore:
@@ -35,6 +39,8 @@ class VectorStore:
             self.collection_name, configuration={"hnsw": {"space": "cosine"}}, embedding_function=None
         )
         self.sources: dict[str, int] = {}  # source name -> page count indexed
+        self._chunks: list[Chunk] = []  # same chunks as in Chroma, kept for keyword search
+        self._bm25: BM25 | None = None  # built on first keyword search, rebuilt after add()
 
     def add(self, chunks: list[Chunk]) -> None:
         if not chunks:
@@ -48,13 +54,34 @@ class VectorStore:
         )
         for c in chunks:
             self.sources[c.source] = max(self.sources.get(c.source, 0), c.page)
+        self._chunks.extend(chunks)
+        self._bm25 = None
 
     def __len__(self) -> int:
         return self._col.count()
 
-    def search(self, query: str, k: int = 5) -> list[Hit]:
+    def search(self, query: str, k: int = 5, mode: str = "dense") -> list[Hit]:
+        if mode not in SEARCH_MODES:
+            raise ValueError(f"Unknown search mode {mode!r}; use one of {SEARCH_MODES}")
         if len(self) == 0:
             return []
+        if mode == "dense":
+            return self._dense(query, k)
+        if mode == "bm25":
+            return self._keyword(query, k)
+        # hybrid: take a wider pool from each method, fuse by rank, keep the best k
+        pool = min(len(self), max(4 * k, 20))
+        dense, keyword = self._dense(query, pool), self._keyword(query, pool)
+        by_id = {h.chunk.id: h.chunk for h in dense + keyword}
+        fused = reciprocal_rank_fusion([[h.chunk.id for h in dense], [h.chunk.id for h in keyword]])
+        return [Hit(by_id[cid], score) for cid, score in fused[:k]]
+
+    def _keyword(self, query: str, k: int) -> list[Hit]:
+        if self._bm25 is None:
+            self._bm25 = BM25([c.text for c in self._chunks])
+        return [Hit(self._chunks[i], s) for i, s in self._bm25.top(query, k)]
+
+    def _dense(self, query: str, k: int) -> list[Hit]:
         embed_query = getattr(self.embedder, "embed_query", None)
         qv = embed_query(query) if embed_query else self.embedder.embed([query])[0]
         res = self._col.query(

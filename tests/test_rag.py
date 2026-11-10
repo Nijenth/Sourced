@@ -201,6 +201,63 @@ def test_real_quotes_from_the_eval_are_located_on_page_4(pages, quote):
     assert locate_quote(quote, pages[3].text), pages[3].text[:600]
 
 
+def test_quote_ending_with_ellipsis_is_located():
+    assert locate_quote("Full-time employees get 24 days of paid annual leave...", SOURCE)
+
+
+@pytest.mark.parametrize("page_index, quote", [
+    (5, "The studio closes for 10 company holidays: New Year's Day, Martin Luther King Jr. Day, Memorial Day, Juneteenth..."),
+    (3, "Lead, Principal and Director roles | Notice required (either side) | After probation | 8 weeks"),
+])
+def test_more_real_quotes_from_the_eval_are_located(pages, page_index, quote):
+    # Ollama gave these with hybrid search on; both were wrongly rejected.
+    assert locate_quote(quote, pages[page_index].text), pages[page_index].text[:600]
+
+
+def test_quote_that_skips_a_sentence_without_ellipsis_is_located(pages):
+    # Ollama joined sentences 1 and 3 of the probation paragraph, leaving out the sentence between them.
+    quote = ("Every new employee has a probation period of 90 days (three months). Probation can be extended once, "
+             "by up to 60 days, if both of you agree more time is needed.")
+    assert locate_quote(quote, pages[3].text), pages[3].text[:600]
+    assert locate_quote(quote.replace("60 days", "90 days"), pages[3].text) is None  # a changed number still fails
+
+
+def test_table_row_rebuilt_in_the_models_own_layout_is_located(pages):
+    # Ollama mashed a header cell into the row, with no separators.
+    assert locate_quote("Lead, Principal and Director roles Notice required (either side) 8 weeks", pages[3].text)
+
+
+@pytest.mark.parametrize("quote", [
+    "Lead, Principal and Director roles Notice required (either side) 12 weeks",   # wrong number
+    "Lead, Principal and Director roles get garden leave instead of notice",       # invented words
+    "Every new employee has a probation period of 90 days. Probation can never be extended.",  # invented negation
+    "Every new employee has a probation period of 90 days. Probation can't be extended.",      # same, contracted
+])
+def test_rebuilt_quotes_with_wrong_content_are_rejected(pages, quote):
+    assert locate_quote(quote, pages[3].text) is None
+
+
+@pytest.mark.parametrize("page_index, quote", [
+    # dropped "not": the source says sick leave does NOT carry over
+    (6, "Sick leave does carry over and is paid out when you leave."),
+    # added "can't" to an otherwise word-for-word sentence
+    (3, "Probation can't be extended once, by up to 60 days, if both of you agree more time is needed."),
+])
+def test_flipped_negations_are_rejected(pages, page_index, quote):
+    assert locate_quote(quote, pages[page_index].text) is None
+
+
+@pytest.mark.xfail(strict=True, reason="Known limitation: a table value swapped for another value from the same "
+                                       "table passes the layout-insensitive check. Needs an LLM faithfulness judge.")
+def test_known_limitation_swapped_table_value(pages):
+    assert locate_quote("Lead, Principal and Director roles Notice required (either side) 4 weeks", pages[3].text) is None
+
+
+def test_table_quote_with_an_invented_cell_is_rejected(pages):
+    assert locate_quote("Lead, Principal and Director roles | Notice required (either side) | 12 weeks of garden leave",
+                        pages[3].text) is None
+
+
 def test_raw_reply_is_kept_for_diagnostics():
     a = build_answer("not json", _hits(SOURCE), "q")
     assert a.raw == "not json" and a.text == BLOCKED_TEXT
