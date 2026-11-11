@@ -27,6 +27,7 @@ from .schemas import ChatResponse, PublicChatRequest
 from .store import KeywordSearchLimit, PgVectorStore
 from .usage import record_answer
 from .widget_assets import ASSET_PREFIX, ROOT, page_headers, script_tag
+from .widget_sessions import PresentedSession, bearer, unauthorized
 from .widgets import document_ids
 
 api = APIRouter(prefix="/api/v1/public", tags=["public"])
@@ -44,10 +45,10 @@ class PublicConfig(BaseModel):
     access_mode: str
 
 
-def public_widget(db: Db, site_key: str, lock: bool = False) -> Widget:
+def widget_for_key(db: Db, site_key: str, lock: bool = False) -> Widget:
     if not KEY.fullmatch(site_key):
         raise HTTPException(404, "Widget not found.")
-    query = select(Widget).where(Widget.site_key == site_key, Widget.access_mode == "public")
+    query = select(Widget).where(Widget.site_key == site_key)
     widget = db.scalar(query.with_for_update(read=True) if lock else query)
     if widget is None:
         raise HTTPException(404, "Widget not found.")
@@ -79,7 +80,7 @@ def cors(origin: str | None) -> dict[str, str]:
 @api.get("/widgets/{site_key}/config")
 def config(site_key: str, request: Request, response: Response, db: Db) -> PublicConfig:
     public_settings(request)
-    widget = public_widget(db, site_key)
+    widget = widget_for_key(db, site_key)
     response.headers.update(cors(allowed_origin(request, widget, required=False)))
     return PublicConfig.model_validate(widget, from_attributes=True)
 
@@ -87,13 +88,15 @@ def config(site_key: str, request: Request, response: Response, db: Db) -> Publi
 @api.options("/chat", include_in_schema=False)
 def preflight(site_key: str, request: Request, db: Db) -> Response:
     public_settings(request)
-    origin = allowed_origin(request, public_widget(db, site_key))
+    widget = widget_for_key(db, site_key)
+    origin = allowed_origin(request, widget)
     method = request.headers.get("access-control-request-method")
     headers = {name.strip().lower() for name in request.headers.get("access-control-request-headers", "").split(",")}
-    if method != "POST" or not headers <= {"content-type", "x-sourced-key"}:
+    credential = "authorization" if widget.access_mode == "signed_in" else "x-sourced-key"
+    if method != "POST" or credential not in headers or not headers <= {"content-type", credential}:
         raise HTTPException(403, "This cross-origin request is not allowed.")
     return Response(status_code=204, headers={
-        **cors(origin), "Access-Control-Allow-Methods": "POST", "Access-Control-Allow-Headers": "Content-Type, X-Sourced-Key",
+        **cors(origin), "Access-Control-Allow-Methods": "POST", "Access-Control-Allow-Headers": f"Content-Type, {credential}",
     })
 
 
@@ -101,8 +104,10 @@ def signature(secret: bytes, ip: str, payload: str) -> str:
     return hmac.new(secret, f"preview:{ip}:{payload}".encode(), hashlib.sha256).hexdigest()
 
 
-def signed_preview(secret: bytes, ip: str, site_key: str, origin: str, document_id: str, page: int) -> str:
-    payload = json.dumps([site_key, origin, document_id, page, int(time.time()) + PREVIEW_SECONDS], separators=(",", ":"))
+def signed_preview(secret: bytes, ip: str, widget: Widget, origin: str | None, document_id: str, page: int, binding: str | None) -> str:
+    payload = json.dumps([
+        widget.site_key, origin, document_id, page, int(time.time()) + PREVIEW_SECONDS, widget.access_version, binding,
+    ], separators=(",", ":"))
     encoded = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
     token = encoded + "." + signature(secret, ip, encoded)
     return f"/api/v1/public/previews/{token}.png"
@@ -111,14 +116,32 @@ def signed_preview(secret: bytes, ip: str, site_key: str, origin: str, document_
 @api.post("/chat")
 def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, site_key: str | None = None) -> ChatResponse:
     settings = public_settings(request)
-    key = request.headers.get("x-sourced-key", "")
-    if site_key is not None and site_key != key:
-        raise HTTPException(404, "Widget not found.")
-    widget = public_widget(db, key, lock=True)
-    origin = allowed_origin(request, widget)
-    headers = cors(origin)
+    header_key = request.headers.get("x-sourced-key")
+    hint = site_key if site_key is not None else header_key
+    headers = cors(None)
     try:
+        widget = widget_for_key(db, hint, lock=True) if hint is not None else None
+        if widget is not None:
+            origin = allowed_origin(request, widget, required=widget.access_mode == "public")
+            headers = cors(origin)
+        presented = None
+        binding = None
+        if "authorization" in request.headers:
+            presented = PresentedSession.parse(bearer(request))
+            if widget is None:
+                widget = db.scalar(select(Widget).where(Widget.id == presented.widget_id).with_for_update(read=True))
+                if widget is None:
+                    raise unauthorized()
+                origin = allowed_origin(request, widget, required=False)
+                headers = cors(origin)
+            if header_key is not None and header_key != widget.site_key:
+                raise unauthorized()
+            binding = presented.verify(settings.preview_secret, widget)
+        elif widget is None or widget.access_mode != "public" or header_key != widget.site_key:
+            raise unauthorized()
+
         ip = client_ip(request)
+        key, access_version = widget.site_key, widget.access_version
         workspace_id, widget_id, provider, judge = widget.workspace_id, widget.id, widget.provider, widget.judge_enabled
         selected = set(document_ids(db, widget))
         reserve_question(db, settings, workspace_id, widget_id, ip)
@@ -132,8 +155,12 @@ def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, 
             if judge and answer.status == "answered" and (not answer.judgement or answer.judgement.verdict != "supported"):
                 answer = ChatResponse(status="unverified", text=BLOCKED)
 
-        current = public_widget(db, key, lock=True)
-        allowed_origin(request, current)
+        current = widget_for_key(db, key, lock=True)
+        allowed_origin(request, current, required=presented is None)
+        if current.access_version != access_version:
+            raise unauthorized()
+        if presented is not None:
+            presented.verify(settings.preview_secret, current)
         cited = {UUID(citation.document_id) for citation in answer.citations}
         if cited:
             attached = set(document_ids(db, current))
@@ -144,7 +171,9 @@ def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, 
                 answer = ChatResponse(status="not_found", text=NOT_FOUND_TEXT)
         if answer.status == "answered":
             for citation in answer.citations:
-                citation.preview_url = signed_preview(settings.preview_secret, ip, key, origin, citation.document_id, citation.page)
+                citation.preview_url = signed_preview(
+                    settings.preview_secret, ip, current, origin, citation.document_id, citation.page, binding,
+                )
             if answer.judgement:
                 answer.judgement.problems = []
         else:
@@ -163,8 +192,7 @@ def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, 
         raise
 
 
-@api.get("/previews/{signed_id}.png")
-def preview(signed_id: str, request: Request, db: Db) -> Response:
+def preview_grant(signed_id: str, request: Request, db: Db):
     settings = public_settings(request)
     encoded, separator, tag = signed_id.partition(".")
     if len(signed_id) > 800 or not separator or not re.fullmatch(r"[0-9a-f]{64}", tag) or not hmac.compare_digest(
@@ -172,27 +200,60 @@ def preview(signed_id: str, request: Request, db: Db) -> Response:
     ):
         raise HTTPException(404, "Preview not found.")
     try:
-        site_key, granted_origin, document_id, page, expires = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        grant = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        if len(grant) == 5:
+            # Public grants issued by M4 remain valid until expiry unless access changed.
+            grant.extend([0, None])
+        site_key, granted_origin, document_id, page, expires, version, binding = grant
         document_id = UUID(document_id)
     except (ValueError, TypeError, binascii.Error):
         raise HTTPException(404, "Preview not found.") from None
     if expires <= time.time():
         raise HTTPException(404, "Preview expired.")
-    widget = public_widget(db, site_key, lock=True)
+    widget = widget_for_key(db, site_key, lock=True)
     origin = request.headers.get("origin")
     if (
-        not origin_is_allowed(granted_origin, widget, settings.public_origin)
+        version != widget.access_version
+        or (binding is not None) != (widget.access_mode == "signed_in")
+        or (granted_origin is not None and not origin_is_allowed(granted_origin, widget, settings.public_origin))
         or (origin is not None and origin != granted_origin)
         or document_id not in document_ids(db, widget)
     ):
         raise HTTPException(404, "Preview not found.")
+    return widget, document_id, page, origin, binding
+
+
+@api.options("/previews/{signed_id}.png", include_in_schema=False)
+def preview_preflight(signed_id: str, request: Request, db: Db) -> Response:
+    _, _, _, origin, binding = preview_grant(signed_id, request, db)
+    if (
+        binding is None or origin is None or request.headers.get("access-control-request-method") != "GET"
+        or request.headers.get("access-control-request-headers", "").strip().lower() != "authorization"
+    ):
+        raise HTTPException(403, "This cross-origin request is not allowed.")
+    return Response(status_code=204, headers={
+        **cors(origin), "Access-Control-Allow-Methods": "GET", "Access-Control-Allow-Headers": "Authorization",
+    })
+
+
+@api.get("/previews/{signed_id}.png")
+def preview(signed_id: str, request: Request, db: Db) -> Response:
+    widget, document_id, page, origin, binding = preview_grant(signed_id, request, db)
+    if binding is not None:
+        try:
+            session = PresentedSession.parse(bearer(request))
+            if not hmac.compare_digest(session.verify(request.state.channels.preview_secret, widget), binding):
+                raise unauthorized()
+        except HTTPException as exc:
+            exc.headers = {**cors(origin), **(exc.headers or {})}
+            raise
     png = page_png(db, widget.workspace_id, document_id, page, request.state.document_limits.timeout)
     return Response(png, media_type="image/png", headers={**cors(origin), "Referrer-Policy": "no-referrer"})
 
 
 @pages.get("/c/{site_key}")
 def hosted(site_key: str, request: Request, db: Db) -> HTMLResponse:
-    if not public_widget(db, site_key).hosted_page_enabled:
+    if not widget_for_key(db, site_key).hosted_page_enabled:
         raise HTTPException(404, "Widget not found.")
     settings = public_settings(request)
     tag = script_tag(settings.public_origin, site_key, hosted=True)
@@ -209,7 +270,8 @@ def demo(request: Request, db: Db) -> HTMLResponse:
     if not site_key:
         raise HTTPException(404)
     settings = public_settings(request)
-    public_widget(db, site_key)
+    if widget_for_key(db, site_key).access_mode != "public":
+        raise HTTPException(404)
     template = (ROOT / "demo" / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(template.replace("<!-- sourced-widget -->", script_tag(settings.public_origin, site_key)),
                         headers=page_headers(settings.public_origin))

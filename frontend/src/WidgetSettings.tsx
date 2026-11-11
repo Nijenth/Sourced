@@ -6,7 +6,7 @@ import { DocumentStatus } from './Documents'
 
 export interface WidgetFields {
   name: string
-  access_mode: 'public'
+  access_mode: 'public' | 'signed_in'
   allowed_origins: string[]
   document_ids: string[]
   provider: string
@@ -24,6 +24,7 @@ export interface WidgetRecord extends WidgetFields {
   script_url: string | null
   integrity: string | null
   hosted_url: string | null
+  has_secret_key: boolean
 }
 
 const palette = [
@@ -60,6 +61,7 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [revealedSecret, setRevealedSecret] = useState('')
   const snippet = embedCode(widget)
   const path = widget ? '/widgets/' + encodeURIComponent(widget.id) : '/widgets'
   const validProvider = providers.some((provider) => provider.name === draft.provider && provider.ready)
@@ -80,6 +82,7 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
     setNotice('')
     try {
       const result = await api<WidgetRecord>(path, { method: widget ? 'PATCH' : 'POST', body: JSON.stringify(draft) })
+      if (result.access_mode !== 'signed_in') setRevealedSecret('')
       setDraft(fields(result))
       saved(result)
       setNotice('Widget saved.')
@@ -118,17 +121,23 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
     }
   }
 
-  async function manage(action: 'rotate' | 'delete') {
+  async function manage(action: 'rotate' | 'secret' | 'delete') {
     if (!widget || busy) return
-    const confirmed = window.confirm(action === 'rotate'
-      ? 'Rotate the public site key? Existing snippets and hosted links will stop working.'
-      : 'Delete this widget? Its embeds and hosted link will stop working.')
+    const confirmed = (action === 'secret' && !widget.has_secret_key) || window.confirm({
+      rotate: 'Rotate the public site key? Existing snippets and hosted links will stop working.',
+      secret: 'Rotate the server secret key? Existing tokens and the previous server key will stop working.',
+      delete: 'Delete this widget? Its embeds and hosted link will stop working.',
+    }[action])
     if (!confirmed) return
     setBusy(true)
     setError('')
     setNotice('')
     try {
-      if (action === 'rotate') {
+      if (action === 'secret') {
+        const result = await post<{ secret_key: string }>(path + '/rotate-keys', { site_key: false, secret_key: true })
+        setRevealedSecret(result.secret_key)
+        saved({ ...widget, has_secret_key: true })
+      } else if (action === 'rotate') {
         await post(path + '/rotate-keys', { site_key: true, secret_key: false })
         saved(await api<WidgetRecord>(path))
         setNotice('Site key rotated. Replace the embed code on your websites.')
@@ -155,7 +164,9 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
             <pre tabIndex={0} aria-label="Widget embed code">{snippet}</pre>
             <button type="button" onClick={() => void copy()}><Copy size={15} aria-hidden="true" />Copy code</button>
           </div> : <p className="notice pending">{widget ? 'Set the public origin and preview signing secret on the server to generate an embed code.' : 'Save your widget to generate an embed code.'}</p>}
-          <p className="muted">The site key is public. The website list controls browser embeds. Anyone with the key can call the public API directly.</p>
+          <p className="muted">{draft.access_mode === 'signed_in'
+            ? 'The public site key identifies this widget. Your server issues a short-lived session token for each signed-in visitor.'
+            : 'The site key is public. The website list controls browser embeds. Anyone with the key can call the public API directly.'}</p>
           {widget?.hosted_url && <a className="widget-hosted-link" href={widget.hosted_url} target="_blank" rel="noopener noreferrer">Open hosted chat</a>}
         </section>
 
@@ -163,20 +174,20 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
           <h2 id="access-title">Who can ask, and where</h2>
           <fieldset className="widget-fieldset">
             <legend>Access</legend>
-            <label className="widget-option active">
-              <input type="radio" name="access" checked readOnly />
+            <label className={'widget-option' + (draft.access_mode === 'public' ? ' active' : '')}>
+              <input type="radio" name="access" checked={draft.access_mode === 'public'} onChange={() => change('access_mode', 'public')} />
               <span><strong>Anyone on these websites</strong><small>For public help pages. Treat the chosen documents as public.</small></span>
             </label>
-            <label className="widget-option">
-              <input type="radio" name="access" disabled />
-              <span><strong>Only people signed in to your site or app</strong><small>For internal documents and signed-in users.</small></span>
-              <span className="badge pending">Coming soon</span>
+            <label className={'widget-option' + (draft.access_mode === 'signed_in' ? ' active' : '')}>
+              <input type="radio" name="access" checked={draft.access_mode === 'signed_in'} onChange={() => change('access_mode', 'signed_in')} />
+              <span><strong>Only people signed in to your site or app</strong><small>For internal documents. Your server issues a short-lived token after signing in each user.</small></span>
             </label>
           </fieldset>
           <label className="widget-option">
             <input type="checkbox" role="switch" checked={draft.hosted_page_enabled}
               onChange={(event) => change('hosted_page_enabled', event.target.checked)} />
-            <span><strong>Allow a hosted chat link (for apps and direct links)</strong><small>Anyone with the link can ask about the selected documents.</small></span>
+            <span><strong>Allow a hosted chat link (for apps and direct links)</strong><small>{draft.access_mode === 'signed_in'
+              ? 'Hosted chat requires a session token from your server.' : 'Anyone with the link can ask about the selected documents.'}</small></span>
           </label>
           <div className="widget-settings-stack compact">
             <strong className="widget-label">Websites allowed to show it</strong>
@@ -197,7 +208,9 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
 
         <section className="card widget-settings-card" aria-labelledby="widget-documents">
           <h2 id="widget-documents">Documents it can answer from</h2>
-          <p className="muted">Visitors can see quotes and cited pages from these documents. Leave out anything private.</p>
+          <p className="muted">{draft.access_mode === 'signed_in'
+            ? 'Signed-in visitors can see quotes and cited pages from the documents you select.'
+            : 'Visitors can see quotes and cited pages from these documents. Leave out anything private.'}</p>
           {!documents.length && <p className="muted">Upload a PDF on the Documents page to add it here.</p>}
           <div className="widget-choices">
             {documents.map((document) => <label key={document.id} className="widget-document">
@@ -275,6 +288,25 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
           <h2 id="widget-keys">Manage widget</h2>
           <p className="muted">Rotation replaces the public key used by existing embeds and hosted links. Server secret keys belong only on your server.</p>
           <button type="button" className="secondary" disabled={busy} onClick={() => void manage('rotate')}>Rotate site key</button>
+          {widget.access_mode === 'signed_in' && <>
+            <p className="muted">Keep the server secret key out of website code and mobile apps. Your server exchanges it for session tokens.</p>
+            <button type="button" className="secondary" disabled={busy} onClick={() => void manage('secret')}>
+              {widget.has_secret_key ? 'Rotate server secret key' : 'Generate server secret key'}
+            </button>
+            {revealedSecret && <div className="widget-secret">
+              <p><strong>Copy this key now.</strong> It is shown only once.</p>
+              <code>{revealedSecret}</code>
+              <button type="button" className="secondary" onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(revealedSecret)
+                  setNotice('Server secret key copied.')
+                } catch {
+                  setError('Select and copy the server secret key manually.')
+                }
+              }}>Copy server secret key</button>
+              <button type="button" className="quiet widget-delete" onClick={() => setRevealedSecret('')}>Dismiss key</button>
+            </div>}
+          </>}
           <button type="button" className="quiet widget-delete" disabled={busy} onClick={() => void manage('delete')}>Delete widget</button>
         </section>}
       </aside>

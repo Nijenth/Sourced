@@ -1,5 +1,6 @@
 """FastAPI entry point for the authenticated Sourced API."""
 
+import logging
 from contextlib import asynccontextmanager
 from os import environ
 
@@ -27,6 +28,7 @@ from .settings import DocumentLimits
 from .store import KeywordSearchLimit, PgVectorStore
 from .usage import record_answer, router as usage_router
 from .widget_assets import router as widget_assets
+from .widget_sessions import RedactAccessCredentials
 from .widgets import router as widgets_router
 
 admin = APIRouter(prefix="/api/v1")
@@ -41,6 +43,9 @@ admin.add_api_route("/providers", providers, methods=["GET"], dependencies=[Depe
 async def lifespan(_app: FastAPI):
     limits = DocumentLimits.from_env()
     engine = database_engine()
+    access = logging.getLogger("uvicorn.access")
+    credentials = RedactAccessCredentials()
+    access.addFilter(credentials)
     try:
         yield {
             "sessions": sessionmaker(engine),
@@ -49,6 +54,7 @@ async def lifespan(_app: FastAPI):
             "channels": ChannelSettings.from_env(),
         }
     finally:
+        access.removeFilter(credentials)
         engine.dispose()
 
 
@@ -100,7 +106,10 @@ class DashboardCors:
     async def __call__(self, scope, receive, send):
         path = scope.get("path", "")
         handler = self.app
-        if self.dashboard and scope["type"] == "http" and path.startswith("/api/v1/") and not path.startswith("/api/v1/public/"):
+        if (
+            self.dashboard and scope["type"] == "http" and path.startswith("/api/v1/")
+            and not path.startswith("/api/v1/public/") and not path.endswith("/session-tokens")
+        ):
             handler = self.dashboard
         await handler(scope, receive, send)
 

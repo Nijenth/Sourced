@@ -117,13 +117,17 @@ class UsageDaily(Base):
 
 class Widget(Base):
     __tablename__ = "widgets"
-    __table_args__ = (UniqueConstraint("id", "workspace_id", name="uq_widgets_workspace"),)
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="uq_widgets_workspace"),
+        CheckConstraint("access_mode IN ('public', 'signed_in')", name="widget_access_mode"),
+    )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(100))
     site_key: Mapped[str] = mapped_column(String(64), unique=True)
     secret_key_hash: Mapped[str | None] = mapped_column(String(64))
     access_mode: Mapped[str] = mapped_column(String(16))
+    access_version: Mapped[int] = mapped_column(server_default="0")
     allowed_origins: Mapped[list[str]] = mapped_column(ARRAY(Text))
     provider: Mapped[str] = mapped_column(String(32))
     judge_enabled: Mapped[bool]

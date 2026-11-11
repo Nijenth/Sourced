@@ -9,10 +9,10 @@ const record: WidgetRecord = {
   provider: 'groq', judge_enabled: false, hosted_page_enabled: false, title: 'Ask the handbook', greeting: 'Hello!',
   brand_color: '#1F5C46', fallback_text: 'Ask the People team.',
   script_url: 'https://chat.example.com/widget-assets/1.0.0/widget.js',
-  integrity: 'sha384-fixture', hosted_url: null,
+  integrity: 'sha384-fixture', hosted_url: null, has_secret_key: false,
 }
 
-it('edits public settings, keeps signed-in mode disabled, and saves only editable fields', async () => {
+it('edits widget settings and saves only editable fields', async () => {
   const fetch = vi.fn(async (path: string, options?: RequestInit) => {
     if (options?.method === 'PATCH') return new Response(JSON.stringify({ ...record, ...JSON.parse(String(options.body)) }))
     const fixtures: Record<string, unknown> = {
@@ -28,8 +28,9 @@ it('edits public settings, keeps signed-in mode disabled, and saves only editabl
   vi.stubGlobal('fetch', fetch)
   const user = userEvent.setup()
   render(<WidgetSettings />)
-  expect(await screen.findByRole('radio', { name: /Only people signed in/ })).toBeDisabled()
-  expect(screen.getByText('Coming soon')).toBeVisible()
+  const signedIn = await screen.findByRole('radio', { name: /Only people signed in/ })
+  await user.click(signedIn)
+  expect(signedIn).toBeChecked()
   expect(screen.getByRole('checkbox', { name: /Draft.pdf/ })).toBeDisabled()
   expect(screen.getByLabelText('Widget embed code')).toHaveTextContent('integrity="sha384-fixture"')
   await user.type(screen.getByLabelText('Add a website'), 'help.brightleaf.example')
@@ -47,9 +48,26 @@ it('edits public settings, keeps signed-in mode disabled, and saves only editabl
   const call = fetch.mock.calls.find(([, options]) => options?.method === 'PATCH')
   expect(call?.[0]).toBe('/api/v1/widgets/sample-id')
   const saved = JSON.parse(String(call?.[1]?.body))
-  expect(saved).toMatchObject({ title: 'Ask Brightleaf', access_mode: 'public', judge_enabled: true, hosted_page_enabled: true,
+  expect(saved).toMatchObject({ title: 'Ask Brightleaf', access_mode: 'signed_in', judge_enabled: true, hosted_page_enabled: true,
     allowed_origins: ['https://people.brightleaf.example', 'https://help.brightleaf.example'], document_ids: ['handbook'] })
   expect(saved).not.toHaveProperty('site_key')
+  expect(saved).not.toHaveProperty('has_secret_key')
+})
+
+it('shows the generated server secret once and dismisses it', async () => {
+  const secret = 'sk_' + 'x'.repeat(43)
+  const fetch = vi.fn(async (path: string) => new Response(JSON.stringify(
+    path.endsWith('/rotate-keys') ? { site_key: record.site_key, secret_key: secret }
+      : path.endsWith('/widgets') ? [{ ...record, access_mode: 'signed_in' }] : [],
+  )))
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  render(<WidgetSettings />)
+  await user.click(await screen.findByRole('button', { name: 'Generate server secret key' }))
+  expect(await screen.findByText(secret)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Rotate server secret key' })).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Dismiss key' }))
+  expect(screen.queryByText(secret)).not.toBeInTheDocument()
 })
 
 it('defaults accuracy checking on when a new widget selects an AI model', async () => {

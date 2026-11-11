@@ -78,7 +78,7 @@ def test_widget_settings_ownership_rotation_and_asset_integrity(public_env, sess
         owned = queue(owner, make_pdf(ALPHA_TEXT))
         assert process_one(sessions, DocumentLimits.from_env(), HashingEmbedder())
         assert other.post(API + "/widgets", headers=csrf(other), json={"document_ids": [str(owned)]}).status_code == 404
-        assert owner.post(API + "/widgets", headers=csrf(owner), json={"access_mode": "signed_in"}).status_code == 422
+        assert owner.post(API + "/widgets", headers=csrf(owner), json={"access_mode": "unsupported"}).status_code == 422
         assert owner.post(API + "/widgets", headers=csrf(owner), json={"allowed_origins": ["https://*.example.com"]}).status_code == 422
         queued = queue(owner, make_pdf(BETA_TEXT))
         assert owner.post(API + "/widgets", headers=csrf(owner), json={"document_ids": [str(queued)]}).status_code == 422
