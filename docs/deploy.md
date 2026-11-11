@@ -19,7 +19,7 @@ Plans change; check each provider's pricing page before you rely on it.
 
 ### 1. Create the database (Neon)
 
-1. Sign up at neon.com and create a project. Pick the region closest to your Render region (the blueprint uses Singapore, so choose AWS Asia Pacific (Singapore)).
+1. Sign up at neon.com and create a project. Pick the same area as the Render service: the blueprint uses Virginia (US East), so choose **AWS US East (N. Virginia)**. US East keeps the server close to the AI providers and to visitors in the US and Europe; keeping the app and the database in the same region matters most, because every question makes several database queries.
 2. Open **Connect**, turn **Connection pooling off**, and copy the connection string. It looks like `postgresql://user:password@ep-....aws.neon.tech/neondb?sslmode=require`. Sourced creates its tables and enables pgvector itself on first start.
 
 Use the direct (unpooled) string: Sourced keeps its own connection pool.

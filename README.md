@@ -24,6 +24,18 @@ The demo opens with a 16-page employee handbook for **Brightleaf Studio, a ficti
 | **Measured, not guessed** | A 35-question evaluation in 7 categories, a free retrieval comparison, a tamper test for the judge, and **137 automated tests**. |
 | **Can run free and private** | With Ollama, everything runs on your own computer: no API keys, no cost, no data leaving the machine. |
 
+## Tech stack
+
+| Area | Tools |
+| --- | --- |
+| Engine (`rag/`) | Python 3.12, pypdf and pypdfium2 (PDFs and tables), BM25 written from scratch + Reciprocal Rank Fusion, fastembed cross-encoder reranker |
+| AI providers | Groq, Google Gemini, OpenAI, Anthropic, Ollama (local), behind one adapter interface |
+| API and worker (`backend/`) | FastAPI, Pydantic, SQLAlchemy + Alembic, PostgreSQL with pgvector, argon2 |
+| Admin dashboard (`frontend/`) | React 19 + TypeScript, Vite, React Router |
+| Website widget (`widget/`) | Plain JavaScript in a Shadow DOM, versioned releases with integrity hashes |
+| Quality | pytest, Vitest + Testing Library, Playwright browser walkthroughs, a 35-question evaluation |
+| Delivery | Docker + Docker Compose, GitHub Actions CI, Render + Neon hosting |
+
 ## How it works
 
 ```mermaid
