@@ -2,6 +2,13 @@
 
 Sourced is a retrieval-augmented chatbot over PDFs. The `rag/` package is the engine; `app.py` is a Streamlit demo on top of it. A full-stack version (FastAPI + React) is specified in `docs/fullstack-brief.md`.
 
+## Naming
+
+- The product is called **Sourced** (it was called "DocChat" earlier; older commits use that name). Use "Sourced" in every user-facing title, page heading, document and README text.
+- The GitHub repository is `Nijenth/Sourced`. A local checkout may be in a folder named `rag-chatbot` or `sourced`; don't rely on the folder name.
+- New components follow the name: `sourced-api` (FastAPI backend), `sourced-web` (React frontend), and `sourced-` prefixes for Docker services, images and database names.
+- The Python engine package stays `rag/`; don't rename it.
+
 ## Setup and checks
 
 ```bash
