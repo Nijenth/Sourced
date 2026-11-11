@@ -31,7 +31,9 @@ from .store import KeywordSearchLimit, PgVectorStore
 from .usage import record_answer, router as usage_router
 from .widget_assets import router as widget_assets
 from .widget_sessions import RedactAccessCredentials
+from .web import mount_dashboard
 from .widgets import router as widgets_router
+from .worker import EmbeddedWorker
 
 admin = APIRouter(prefix="/api/v1")
 admin.include_router(auth_router)
@@ -48,14 +50,22 @@ async def lifespan(_app: FastAPI):
     access = logging.getLogger("uvicorn.access")
     credentials = RedactAccessCredentials()
     access.addFilter(credentials)
+    sessions = sessionmaker(engine)
+    worker = None
+    if environ.get("SOURCED_EMBEDDED_WORKER") == "1":
+        # Single-container hosting: ingest uploads on a thread here instead of a separate worker process.
+        worker = EmbeddedWorker(sessions)
+        worker.start()
     try:
         yield {
-            "sessions": sessionmaker(engine),
+            "sessions": sessions,
             "document_limits": limits,
             "chat_service": ChatService(load_settings()),
             "channels": ChannelSettings.from_env(),
         }
     finally:
+        if worker is not None:
+            worker.stop()
         access.removeFilter(credentials)
         engine.dispose()
 
@@ -129,3 +139,7 @@ async def invalid_request(_request: Request, exc: RequestValidationError) -> JSO
     # Credentials and other request values should never appear in validation responses.
     detail = [{key: item[key] for key in ("loc", "msg", "type")} for item in exc.errors()]
     return JSONResponse(status_code=422, content={"detail": detail})
+
+
+# Last, so every API, widget and demo route above takes precedence over the dashboard's page routes.
+mount_dashboard(app)

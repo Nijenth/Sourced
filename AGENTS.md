@@ -31,7 +31,7 @@ The Postgres-backed backend tests need Docker, or `SOURCED_TEST_DATABASE_URL` po
 | `rag/` | Engine maintainer | **Do not modify.** If you need an engine change, write the request in `docs/engine-requests.md` (what, why, proposed interface) and work around it until it lands. |
 | `app.py` | Engine maintainer | Must keep working; don't refactor it as part of other work. |
 | `tests/`, `eval/` | Engine maintainer | Don't edit existing tests or questions. Add new test files for new code. |
-| `backend/`, `frontend/`, `widget/`, `demo/`, `deploy/` | Full-stack work | Yours, per `docs/fullstack-brief.md`. |
+| `backend/`, `frontend/`, `widget/`, `demo/`, `deploy/`, `Dockerfile`, `docker-compose.yml`, `render.yaml` | Full-stack work | Yours, per `docs/fullstack-brief.md`. Deployment steps live in `docs/deploy.md`; keep it in step with these files. |
 | `docs/design/` | Product owner | Read-only reference for the screens. Don't edit; ask if something is unclear. |
 
 ## Rules

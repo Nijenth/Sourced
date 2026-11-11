@@ -98,3 +98,29 @@ jobs:
           name: playwright-results
           path: frontend/test-results
           retention-days: 7
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write a test configuration (offline mode, no keys)
+        run: |
+          cat > .env <<'CONFIG'
+          RAG_OFFLINE_MODE=1
+          SOURCED_PREVIEW_SECRET=ci-only-preview-secret-0123456789abcdef
+          SOURCED_DEMO_ADMIN_EMAIL=demo@example.com
+          SOURCED_DEMO_ADMIN_PASSWORD=ci-only demo password
+          SOURCED_ALLOW_SIGNUP=0
+          CONFIG
+      - name: Build and start (docker compose)
+        run: docker compose up --detach --build --wait --wait-timeout 300
+      - name: Smoke test the running system
+        run: python3 deploy/smoke_test.py http://localhost:8000 240
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop
+        if: always()
+        run: docker compose down --volumes

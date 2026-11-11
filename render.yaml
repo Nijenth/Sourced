@@ -1,0 +1,48 @@
+# Render Blueprint for the free Sourced demo: one free web service running the API, the ingestion worker
+# (in-process), the admin dashboard and the Brightleaf demo. The database is a free Neon Postgres (pgvector).
+# Step-by-step instructions: docs/deploy.md.
+services:
+  - type: web
+    name: sourced
+    runtime: docker
+    plan: free
+    region: singapore           # closest free region to India; pick the Neon region to match
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      # --- Fill these in when Render asks (they're never stored in this repository) ---
+      - key: SOURCED_DATABASE_URL     # Neon connection string, postgresql://...?sslmode=require
+        sync: false
+      - key: GROQ_API_KEY             # answers and the accuracy check
+        sync: false
+      - key: GEMINI_API_KEY           # embeddings (search). Free tier: use fictional documents only.
+        sync: false
+      - key: SOURCED_DEMO_ADMIN_EMAIL # your sign-in for the dashboard
+        sync: false
+      - key: SOURCED_DEMO_ADMIN_PASSWORD
+        sync: false
+      # --- Generated or fixed ---
+      # SOURCED_PUBLIC_ORIGIN defaults to the address Render gives the service (RENDER_EXTERNAL_URL).
+      # Set it only if you add a custom domain.
+      - key: SOURCED_PREVIEW_SECRET
+        generateValue: true
+      - key: CHAT_PROVIDER
+        value: groq
+      - key: EMBEDDING_PROVIDER
+        value: gemini
+      - key: JUDGE
+        value: "on"
+      - key: RERANKER                 # the cross-encoder needs more memory than the free plan has
+        value: none
+      - key: SOURCED_EMBEDDED_WORKER
+        value: "1"
+      - key: SOURCED_ALLOW_SIGNUP     # a public demo shouldn't let strangers upload documents
+        value: "0"
+      - key: SOURCED_PDF_MEMORY_MB
+        value: "256"
+      - key: SOURCED_WORKSPACE_QUESTIONS_PER_DAY
+        value: "200"
+      # Render's proxy (10.0.0.0/8) and Cloudflare, which sits in front of it (https://www.cloudflare.com/ips/),
+      # so per-visitor limits see the visitor's address rather than a proxy's.
+      - key: SOURCED_TRUSTED_PROXIES
+        value: "10.0.0.0/8,173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32"

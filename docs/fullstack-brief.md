@@ -3,6 +3,8 @@
 **Audience:** a coding agent (Codex) or developer building the production version.
 **Read first:** `AGENTS.md` (ownership and rules), `README.md` (what the engine does and how well), `docs/design/README.md` (the screens to build).
 
+**Status:** M1–M7 are implemented. Deployment is described in `docs/deploy.md`.
+
 ## 1. Goal
 
 Turn the Sourced engine (`rag/`) into a product a business can use with **its own private documents**, delivered **API-first**: one backend that every channel talks to.

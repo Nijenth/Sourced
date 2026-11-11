@@ -9,7 +9,9 @@ nav a { color: #42534a; }
 .hero { padding: 56px clamp(20px, 5vw, 56px); background: #f0ede5; }
 .hero .eyebrow { color: #1f5c46; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; }
 .hero h1 { max-width: 690px; font-family: Georgia, serif; font-weight: 600; font-size: clamp(34px, 4.4vw, 60px); line-height: 1.08; letter-spacing: -.025em; }
-.hero p:last-child { max-width: 610px; margin-top: 14px; color: #4a4f57; font-size: 17px; }
+.hero > p:not(.eyebrow) { max-width: 610px; margin-top: 14px; color: #4a4f57; font-size: 17px; }
+.hero .try { margin-top: 18px; padding: 12px 14px; border-left: 3px solid #1f5c46; background: #fbfaf7; border-radius: 0 8px 8px 0; font-size: 14px; color: #2c3a33; }
+footer a { color: #1f5c46; }
 .topics { padding: 40px clamp(20px, 5vw, 56px); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; max-width: 820px; }
 .topics section { padding: 20px; background: white; border: 1px solid #ece9e2; border-radius: 12px; }
 .topics h2 { font-size: 16px; margin-bottom: 4px; }

@@ -1,0 +1,46 @@
+# Local run of the whole system: Postgres with pgvector, and the Sourced image (API, worker, dashboard, demo).
+#   1. Copy .env.example to .env and fill in at least SOURCED_PREVIEW_SECRET and an AI provider key
+#      (or RAG_OFFLINE_MODE=1 to try it without keys).
+#   2. docker compose up --build
+#   3. Open http://localhost:8000 (dashboard) and http://localhost:8000/demo/ (if the demo is configured).
+name: sourced
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg16
+    environment:
+      POSTGRES_USER: sourced
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sourced-local-only}
+      POSTGRES_DB: sourced
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sourced -d sourced"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SOURCED_DATABASE_URL: postgresql+psycopg://sourced:${POSTGRES_PASSWORD:-sourced-local-only}@db:5432/sourced
+      SOURCED_PUBLIC_ORIGIN: ${SOURCED_PUBLIC_ORIGIN:-http://localhost:8000}
+      SOURCED_EMBEDDED_WORKER: "1"
+      PORT: "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+volumes:
+  db-data:

@@ -4,7 +4,7 @@
 
 Ask questions about your PDFs and get short answers drawn only from the documents. Every answer shows the file, the page and the exact passage behind it, and the app refuses to show answers it can't back up.
 
-**Live demo:** _add your Streamlit link here_
+**Live demo:** _add your Render link here (see [docs/deploy.md](docs/deploy.md))_
 
 <!-- Add a screenshot of the live app here: save it as docs/screenshot.png and uncomment the line below.
 ![Sourced answering a question about annual leave, with the source passage and page shown](docs/screenshot.png)
@@ -168,7 +168,13 @@ To use a configured AI provider, start Uvicorn with the provider settings in the
 
 See the [Sourced backend guide](backend/README.md) for the workspace API, database setup, worker, and Docker-backed tests.
 
-## Deploy a live demo (free)
+## Deploy
+
+The full product (API, dashboard, website widget and the Brightleaf demo) is one Docker image. [docs/deploy.md](docs/deploy.md) walks through a free deployment on Render with a Neon database, and a local run with `docker compose up --build`.
+
+### Streamlit demo (simplest, free)
+
+The original single-page Streamlit app can also go online on its own:
 
 1. Push this folder to a public GitHub repository. `.env` is in `.gitignore`, so your keys stay local.
 2. Go to [share.streamlit.io](https://share.streamlit.io), choose **Create app**, and pick your repository with `app.py` as the main file.

@@ -57,7 +57,8 @@ class ChannelSettings:
 
     @classmethod
     def from_env(cls):
-        origin = environ.get("SOURCED_PUBLIC_ORIGIN")
+        # Render sets RENDER_EXTERNAL_URL to the service's public address; an explicit setting wins.
+        origin = environ.get("SOURCED_PUBLIC_ORIGIN") or environ.get("RENDER_EXTERNAL_URL")
         origin = canonical_origin(origin) if origin else None
         if origin and origin.startswith("http:") and urlsplit(origin).hostname not in {"localhost", "127.0.0.1", "::1"}:
             raise ValueError("SOURCED_PUBLIC_ORIGIN must use HTTPS outside loopback.")

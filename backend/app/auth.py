@@ -2,6 +2,7 @@
 
 import hashlib
 import secrets
+from os import environ
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID, uuid4
@@ -113,6 +114,8 @@ def issue_session(db: Db, response: Response, member: Member) -> Member:
 
 @router.post("/signup", status_code=201, dependencies=[Depends(require_json)])
 def signup(body: Signup, request: Request, db: Db, response: Response) -> Member:
+    if environ.get("SOURCED_ALLOW_SIGNUP", "1") != "1":
+        raise HTTPException(403, "New accounts are closed on this server. Ask the administrator for access.")
     reserve_signup(db, request.state.channels, request)
     email = body.email.casefold()
     user_id = db.scalar(
