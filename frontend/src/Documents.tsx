@@ -148,7 +148,7 @@ export function Documents() {
             <th scope="row"><span className="filename">{row.filename}</span>
               {row.status === 'processing' && <span className="row-detail">Processing… {row.progress}%
                 <progress aria-label={'Processing ' + row.filename} value={row.progress} max={100} /></span>}
-              {row.status === 'queued' && <span className="row-detail">Waiting to be processed.</span>}
+              {row.status === 'queued' && <span className="row-detail">{row.error || 'Waiting to be processed.'}</span>}
               {row.status === 'failed' && <span className="row-detail warning-text">{row.error || 'The PDF could not be read.'}</span>}
             </th>
             <td>{row.pages}</td><td><DocumentStatus row={row} /></td>

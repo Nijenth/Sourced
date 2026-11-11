@@ -12,6 +12,8 @@ from dataclasses import asdict, replace
 from rag.documents import Chunk, chunk_pages, count_pages, load_pdf
 
 PREVIEW_MAX_SIDE = 1400
+DEFAULT_MEMORY_MB = 1024
+MEMORY_ENV = "SOURCED_PDF_MEMORY_MB"
 
 
 class PdfTaskError(ValueError):
@@ -21,6 +23,7 @@ class PdfTaskError(ValueError):
 def run_pdf_task(operation: str, data: bytes, *args: str, timeout: int) -> bytes:
     # The parser only needs the PDF and a minimal runtime environment.
     env = {name: os.environ[name] for name in ("SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP") if name in os.environ}
+    env[MEMORY_ENV] = str(memory_limit_mb())
     try:
         result = subprocess.run(
             [sys.executable, "-X", "utf8", "-m", "backend.app.pdf_tasks", operation, *args],
@@ -30,6 +33,8 @@ def run_pdf_task(operation: str, data: bytes, *args: str, timeout: int) -> bytes
         raise PdfTaskError("The PDF took too long to process.") from None
     if result.returncode == 3:
         raise PdfTaskError("The PDF contains too much text.")
+    if result.returncode == 4:
+        raise PdfTaskError("The PDF needs too much memory to process.")
     if result.returncode != 0:
         raise PdfTaskError("The PDF could not be read or has no selectable text.")
     return result.stdout
@@ -100,8 +105,32 @@ def render_preview(data: bytes, page_number: int, quote: str = "") -> bytes:
         pdf.close()
 
 
+def memory_limit_mb() -> int:
+    value = int(os.environ.get(MEMORY_ENV, DEFAULT_MEMORY_MB))
+    if value < 128:
+        raise ValueError(f"{MEMORY_ENV} must be at least 128.")
+    return value
+
+
+def apply_memory_limit() -> None:
+    """Cap this process's address space on Linux and macOS. Windows has no equivalent; there only the timeout applies."""
+    try:
+        import resource
+    except ImportError:
+        return
+    limit = int(os.environ.get(MEMORY_ENV, DEFAULT_MEMORY_MB)) * 1024 * 1024
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    if hard != resource.RLIM_INFINITY:
+        limit = min(limit, hard)
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (limit, hard))
+    except (ValueError, OSError):
+        pass  # e.g. macOS refuses RLIMIT_AS changes; the timeout still applies.
+
+
 def main() -> int:
     operation, *args = sys.argv[1:]
+    apply_memory_limit()
     data = sys.stdin.buffer.read()
     try:
         if operation == "count":
@@ -120,6 +149,8 @@ def main() -> int:
             result = render_preview(data, int(args[0]), json.loads(quote))
         else:
             return 2
+    except MemoryError:
+        return 4
     except Exception:
         return 2
     sys.stdout.buffer.write(result)

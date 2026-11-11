@@ -17,7 +17,7 @@ def postgres():
             yield engine
     except DockerUnavailable as exc:
         if environ.get("SOURCED_REQUIRE_DB_TESTS") == "1":
-            pytest.fail(f"SOURCED_REQUIRE_DB_TESTS=1 requires Docker. {exc}", pytrace=False)
+            pytest.fail(f"SOURCED_REQUIRE_DB_TESTS=1 requires Docker or SOURCED_TEST_DATABASE_URL. {exc}", pytrace=False)
         pytest.skip(str(exc))
 
 

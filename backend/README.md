@@ -5,7 +5,7 @@ Run these commands from the repository root with Python 3.12. Set `SOURCED_DATAB
 ```sh
 python -m pip install -r backend/requirements.txt
 python -m alembic -c backend/alembic.ini upgrade head
-python -m uvicorn backend.app.main:app --no-proxy-headers --ssl-keyfile path/to/key.pem --ssl-certfile path/to/cert.pem
+python -m uvicorn backend.app.main:app --no-proxy-headers --log-config backend/logging.json --ssl-keyfile path/to/key.pem --ssl-certfile path/to/cert.pem
 ```
 
 Start the worker in a separate shell with the same database URL and embedding settings.
@@ -34,9 +34,30 @@ Keep the session and CSRF cookies from signup or login. Send the value of `__Hos
 
 PDFs are stored in Postgres under their document IDs. Defaults allow 10 MiB per PDF, 80 pages, and 500,000 extracted characters. The page count, extraction, and preview operations have a 20-second timeout per operation. Previews are capped at 1,400 pixels on their longest side. Configure the limits with `MAX_UPLOAD_MB`, `MAX_UPLOAD_PAGES`, `SOURCED_MAX_PDF_CHARS`, and `SOURCED_PDF_TIMEOUT_SECONDS`.
 
-The worker picks up queued uploads and can reclaim a job after its 15-minute lease expires. A job gets up to three attempts per upload or reindexing run. Invalid PDFs and other known errors can fail immediately with a document status message. When the embedding model changes, the worker reindexes ready documents from their stored PDFs. Retrieval excludes documents indexed by a different model until they are ready again. Run the API and all workers with the same embedding configuration.
+The worker picks up queued uploads and can reclaim a job after its 15-minute lease expires. A job gets up to three attempts per upload or reindexing run. Invalid PDFs and other known errors can fail immediately with a document status message. A temporary embedding failure (the provider is rate-limiting, overloaded or unreachable) puts the document back in the queue with the status message "The search provider is busy…" and retries it after 30 seconds, then 60, before it fails; set the base delay with `SOURCED_INGEST_RETRY_SECONDS`. A misconfigured provider (bad key, unknown model) fails at once.
+
+PDF reading runs in a separate process with the timeout above and, on Linux, an address-space limit of `SOURCED_PDF_MEMORY_MB` (default 1024). A PDF that needs more fails with "The PDF needs too much memory to process." Windows has no equivalent limit, so there only the timeout applies; deploy on Linux.
+
+Every 10 minutes (`SOURCED_CLEANUP_SECONDS`) the worker deletes expired sign-in sessions and finished rate-limit windows. When the embedding model changes, the worker reindexes ready documents from their stored PDFs. Retrieval excludes documents indexed by a different model until they are ready again. Run the API and all workers with the same embedding configuration.
 
 Hybrid search uses exact pgvector cosine distance on the allowed chunks and the engine's BM25 and rank fusion. Keyword and hybrid searches support up to 10,000 chunks per request. Select fewer documents or configure dense search for larger libraries.
+
+## Errors, sign-in limits and logs
+
+Errors a client can act on have a short `code` next to the friendly `detail`: `{"detail": "...", "code": "rate_limited"}`.
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `rate_limited` | 503, `Retry-After: 60` | The AI provider is rate-limiting requests or the account's usage limit is used up. |
+| `provider_unavailable` | 503 | The AI provider is down, overloaded or unreachable. |
+| `misconfigured` | 503 | The AI provider isn't set up: missing or rejected key, unknown model. |
+| `too_many_requests` | 429, `Retry-After` | A Sourced limit was reached (questions, sign-in attempts, new accounts). |
+
+The dashboard gets messages written for administrators ("switch to another model"); public chat gets messages written for visitors, and the widget shows its own wording for each code. Raw provider errors are never sent to a client or written to the logs.
+
+Sign-in is limited per account (`SOURCED_LOGIN_ATTEMPTS_PER_EMAIL`, default 10) and per network address (`SOURCED_LOGIN_ATTEMPTS_PER_IP`, default 50) in 15-minute windows. Successful sign-ins don't count against the account's allowance. New accounts are limited per network address (`SOURCED_SIGNUPS_PER_IP`, default 10 an hour). Emails and addresses are stored only as keyed hashes, using `SOURCED_PREVIEW_SECRET`; without it the key is per process, so limits reset on restart and aren't shared between servers. Set the secret in production even without widgets.
+
+Every response has an `X-Request-ID` header (a well-formed incoming one is kept). Start Uvicorn with `--log-config backend/logging.json` to put the ID in every log line, including access logs. Each answered question logs one `sourced.timing` line with the channel, the outcome and milliseconds per stage (`condense`, `retrieval`, `rerank`, `answer`, `judge`, `total`). Logs never contain questions, answers, document text or credentials.
 
 ## Website widgets
 
@@ -48,7 +69,7 @@ For a signed-in widget, the client’s server calls `POST /api/v1/widgets/{id}/s
 
 Public-mode chat accepts the key in `X-Sourced-Key` and checks the exact `Origin`. Signed-in chat requires an Authorization bearer session token. Browser requests for either mode use the public key in the `site_key` query parameter so the preflight can look up the widget. The Sourced origin and hosted link require per-widget opt-in. Origin checks control browser access. Direct callers can forge an Origin header, so treat documents attached to public-mode widgets as public.
 
-Public questions count against `SOURCED_WIDGET_REQUESTS_PER_MINUTE` and `SOURCED_IP_REQUESTS_PER_MINUTE`. `SOURCED_WORKSPACE_QUESTIONS_PER_DAY` counts admitted admin and public questions together and resets at midnight UTC. The defaults are 20 per widget per minute, 10 per IP per minute, and 300 per workspace per day.
+Public questions count against `SOURCED_WIDGET_REQUESTS_PER_MINUTE` and `SOURCED_IP_REQUESTS_PER_MINUTE`. `SOURCED_WORKSPACE_QUESTIONS_PER_DAY` counts admitted admin and public questions together and resets at midnight UTC. The defaults are 20 per widget per minute, 10 per IP per minute, and 300 per workspace per day. A question that fails because the AI provider failed is handed back to the visitor's per-minute allowance and the workspace's daily allowance. It still counts against the widget's per-minute limit, so an outage can't turn into an unthrottled stream of provider calls.
 
 Run Uvicorn with `--no-proxy-headers` so Sourced receives the direct connection address. Behind a proxy, list its IP or CIDR in the comma-separated `SOURCED_TRUSTED_PROXIES` setting. Each trusted proxy must append the address it received the request from. Sourced walks `X-Forwarded-For` from right to left past trusted proxies and uses the first untrusted IP. The default trust list is empty. IPv6 clients share a /64 identity for rate limits and previews.
 
@@ -58,7 +79,11 @@ Cited-page previews expire after ten minutes. The grant binds the current site k
 
 Run Docker with Linux containers enabled. Tests create a disposable Postgres container on a random loopback port, verify its identity, run Alembic, and stop it afterward. The test connection comes from that container.
 
-When Docker is unavailable, pytest skips the Postgres-backed tests and still runs the engine and other backend tests. Use `pytest -rs` to see the skip reason. Set `SOURCED_REQUIRE_DB_TESTS=1` in CI to make Docker unavailability a test error.
+Without Docker, point `SOURCED_TEST_DATABASE_URL` at an existing Postgres server that has pgvector installed, using an account that may create databases (for example `postgresql://postgres@127.0.0.1:5432/postgres`). Each test run creates a uniquely named database there, migrates it, and drops it afterward. The browser walkthroughs in `frontend/e2e/run_live.py` use the same setting.
+
+When neither is available, pytest skips the Postgres-backed tests and still runs the engine and other backend tests. Use `pytest -rs` to see the skip reason. Set `SOURCED_REQUIRE_DB_TESTS=1` to make a missing database a test error.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: pytest with the Postgres tests required, the offline evaluation, the dashboard's Vitest suite and production build, and the four browser walkthroughs.
 
 ```sh
 python -m pip install -r requirements-dev.txt

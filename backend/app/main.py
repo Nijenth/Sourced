@@ -16,12 +16,14 @@ from rag.pipeline import NOT_FOUND_TEXT
 from rag.providers import ProviderError, make_embedder
 
 from .auth import VerifiedMember, get_member, router as auth_router
-from .channels import ChannelSettings, canonical_origin, reserve_question
+from .channels import ChannelSettings, canonical_origin, refund_failed_question, reserve_question
 from .chat import ChatService
-from .common import api, provider_failure, providers, resolve_provider
+from .common import api, providers, resolve_provider
 from .db import Db, database_engine
 from .db.models import Document
 from .documents import router as documents_router
+from .errors import CodedHTTPException, coded_error, provider_failure
+from .observability import RequestIdMiddleware, install_log_record_factory
 from .public import api as public_api, pages as public_pages
 from .schemas import ChatResponse, WorkspaceChatRequest
 from .settings import DocumentLimits
@@ -67,7 +69,7 @@ def chat(body: WorkspaceChatRequest, request: Request, db: Db, member: VerifiedM
         if selected != set(db.scalars(owned)):
             raise HTTPException(404, "Document not found.")
     provider = resolve_provider(body.provider)
-    reserve_question(db, request.state.channels, member.workspace_id)
+    reserved = reserve_question(db, request.state.channels, member.workspace_id)
     if db.scalar(owned.where(Document.status == "ready").limit(1)) is None:
         return record_answer(db, member.workspace_id, ChatResponse(status="not_found", text=NOT_FOUND_TEXT))
 
@@ -76,11 +78,12 @@ def chat(body: WorkspaceChatRequest, request: Request, db: Db, member: VerifiedM
     try:
         store = PgVectorStore(request.state.sessions, make_embedder(), member.workspace_id, selected)
         history = [message.model_dump() for message in body.history]
-        answer = request.state.chat_service.ask(store, body.question, history, provider)
+        answer = request.state.chat_service.ask(store, body.question, history, provider, channel="ask_test")
     except KeywordSearchLimit as exc:
         raise HTTPException(422, str(exc)) from None
-    except ProviderError:
-        raise provider_failure() from None
+    except ProviderError as exc:
+        refund_failed_question(db, reserved)
+        raise provider_failure(exc) from None
     return record_answer(db, member.workspace_id, answer)
 
 
@@ -115,6 +118,10 @@ class DashboardCors:
 
 
 app.add_middleware(DashboardCors)
+# Added last so it wraps everything, including CORS responses.
+app.add_middleware(RequestIdMiddleware)
+app.add_exception_handler(CodedHTTPException, coded_error)
+install_log_record_factory()
 
 
 @app.exception_handler(RequestValidationError)

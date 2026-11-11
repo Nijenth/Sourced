@@ -70,6 +70,22 @@ describe('Sourced dashboard', () => {
     expect(screen.getByRole('button', { name: 'Choose files' })).toHaveFocus()
   })
 
+  it('shows the friendly message for a provider error and keeps the question', async () => {
+    const message = 'The AI provider is rate-limiting requests or its usage limit is used up. Try again in a few minutes, or switch to another model.'
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/providers')) return json([{ name: 'offline', label: 'Offline test mode', ready: true }])
+      if (url.endsWith('/chat')) return json({ detail: message, code: 'rate_limited' }, 503)
+      return new Response(null, { status: 404 })
+    }))
+    render(<Ask />)
+    const user = userEvent.setup()
+    await screen.findByText('Ready')
+    const input = screen.getByRole('textbox', { name: 'Question' })
+    await user.type(input, 'How much leave?{Enter}')
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(input).toHaveValue('How much leave?')
+  })
+
   it('submits a question and opens a safe source URL with keyboard focus', async () => {
     const fetch = vi.fn(async (url: string) => {
       if (url.endsWith('/providers')) return json([{ name: 'offline', label: 'Offline test mode', ready: true }])

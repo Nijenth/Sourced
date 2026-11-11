@@ -50,6 +50,12 @@
     return node
   }
 
+  const errorMessages = {
+    rate_limited: 'Chat is busy right now. Please try again in a few minutes.',
+    provider_unavailable: 'Chat is temporarily unavailable. Please try again in a moment.',
+    misconfigured: 'Chat is unavailable right now. Please try again later.',
+  }
+
   async function request(url, options) {
     const response = await fetch(url, { ...options, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' })
     if (!response.ok) {
@@ -57,7 +63,9 @@
       if (response.status === 401) {
         throw Object.assign(new Error('Your chat session is unavailable or expired. Reopen chat from your site or app.'), { expired: true })
       }
-      throw new Error('Chat is unavailable. Please try again later.')
+      // The widget shows its own wording for each error code; it never displays server-supplied text.
+      const code = await response.json().then((body) => body?.code, () => null)
+      throw new Error(errorMessages[code] || 'Chat is unavailable. Please try again later.')
     }
     return response
   }

@@ -9,7 +9,9 @@ from rag.pipeline import NOT_FOUND_TEXT
 from rag.providers import ProviderError
 
 from .chat import SAMPLE_DOCUMENT_ID, SampleChat
-from .common import api, provider_failure, providers, resolve_provider
+from .common import api, providers, resolve_provider
+from .errors import CodedHTTPException, coded_error, provider_failure
+from .observability import RequestIdMiddleware, install_log_record_factory
 from .schemas import ChatRequest, ChatResponse
 
 sample = APIRouter(prefix="/api/v1")
@@ -37,10 +39,13 @@ def chat(body: ChatRequest, request: Request) -> ChatResponse:
     sample_chat: SampleChat = request.state.sample_chat
     try:
         return sample_chat.ask(body.question, [message.model_dump() for message in body.history], provider)
-    except ProviderError:
-        raise provider_failure() from None
+    except ProviderError as exc:
+        raise provider_failure(exc) from None
 
 
 app = FastAPI(title="Sourced Sample API", version="1.0.0", lifespan=lifespan)
 app.include_router(api)
 app.include_router(sample)
+app.add_exception_handler(CodedHTTPException, coded_error)
+app.add_middleware(RequestIdMiddleware)
+install_log_record_factory()

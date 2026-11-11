@@ -1,15 +1,13 @@
 """Shared HTTP routes and provider selection for the Sourced APIs."""
 
-import logging
-
 from fastapi import APIRouter, HTTPException
 
 from rag.offline import KeywordChat
 from rag.providers import PROVIDERS, chat_provider_names
 
+from .errors import ADMIN_MESSAGES, MISCONFIGURED, CodedHTTPException
 from .schemas import ProviderStatus
 
-logger = logging.getLogger(__name__)
 api = APIRouter(prefix="/api/v1")
 
 
@@ -35,10 +33,5 @@ def resolve_provider(name: str | None) -> str:
     if provider is not None and provider not in PROVIDERS and provider != "offline":
         raise HTTPException(422, "Unknown chat provider.")
     if provider is None or provider not in ready:
-        raise HTTPException(503, "The requested chat provider is unavailable.")
+        raise CodedHTTPException(503, MISCONFIGURED, "The requested chat provider is unavailable. " + ADMIN_MESSAGES[MISCONFIGURED])
     return provider
-
-
-def provider_failure() -> HTTPException:
-    logger.warning("A Sourced provider operation failed.")
-    return HTTPException(503, "A provider could not complete the request. Try again or check the configuration.")

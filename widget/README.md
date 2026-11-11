@@ -4,6 +4,8 @@ Create a widget on the dashboard’s Website widget page. Add the exact origins 
 
 Copy the generated script tag into your website just before `</body>`. It loads asynchronously with a versioned URL and a SHA-384 integrity hash. The widget loads its stylesheet from the same versioned directory.
 
+Release 1.2.0 shows a specific message when the AI provider is busy, down or not set up (the API's `rate_limited`, `provider_unavailable` and `misconfigured` codes). The widget always uses its own wording for these and never displays text from the server.
+
 To release a new widget version, copy `widget.js` and `widget.css` into a new `dist/<major.minor.patch>/` directory and append their SHA-384 hashes to `dist/releases.json`. Keep the files and hashes for earlier releases intact. The API serves every listed release and uses the newest one in new snippets.
 
 For a site with a Content Security Policy, allow the Sourced public origin in `script-src`, `style-src` and `connect-src`, and allow `blob:` in `img-src` for cited-page previews. The embed uses a Shadow DOM and needs no inline scripts or evaluated code. Questions and answers stay in the widget’s memory for the current page.

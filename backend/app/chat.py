@@ -9,10 +9,12 @@ from rag.config import Settings
 from rag.documents import chunk_pages, load_pdf
 from rag.judge import Judge
 from rag.pipeline import NOT_FOUND_TEXT, RAGPipeline
-from rag.providers import make_chat, make_embedder
+from rag.providers import ProviderError, make_chat, make_embedder
 from rag.rerank import Reranker, make_reranker
 from rag.store import VectorStore
 
+from .errors import provider_error_code
+from .observability import TimedChat, TimedReranker, TimedStore, Timings
 from .schemas import ChatResponse, CitationResponse, JudgementResponse, PassageResponse
 from .store import DocumentHit, PgVectorStore
 
@@ -32,29 +34,40 @@ class ChatService:
 
     def ask(
         self, store: VectorStore | PgVectorStore, question: str, history: list[dict], provider: str,
-        *, judge_enabled: bool | None = None, public: bool = False,
+        *, judge_enabled: bool | None = None, public: bool = False, channel: str = "ask_test",
     ) -> ChatResponse:
-        chat = make_chat(provider)
-        judge = None
-        check_accuracy = self.settings.judge if judge_enabled is None else judge_enabled
-        if not self.settings.fake_mode:
-            if check_accuracy:
-                judge = Judge(make_chat(self.settings.judge_provider) if self.settings.judge_provider else chat)
-            if self.settings.reranker != "none":
-                with self._reranker_lock:
-                    if self._reranker is None:
-                        self._reranker = make_reranker(self.settings.reranker, self.settings.rerank_model)
-        pipeline = RAGPipeline(
-            store,
-            chat,
-            top_k=self.settings.top_k,
-            retrieval_mode=self.settings.retrieval_mode,
-            reranker=self._reranker,
-            rerank_pool=self.settings.rerank_pool,
-            judge=judge,
-            judge_action="block" if public else self.settings.judge_action,
-        )
-        return to_response(pipeline.ask(question, history), question)
+        timings = Timings()
+        try:
+            chat = make_chat(provider)
+            judge = None
+            check_accuracy = self.settings.judge if judge_enabled is None else judge_enabled
+            if not self.settings.fake_mode:
+                if check_accuracy:
+                    judge_chat = make_chat(self.settings.judge_provider) if self.settings.judge_provider else chat
+                    judge = Judge(TimedChat(judge_chat, timings, "judge"))
+                if self.settings.reranker != "none":
+                    with self._reranker_lock:
+                        if self._reranker is None:
+                            self._reranker = make_reranker(self.settings.reranker, self.settings.rerank_model)
+            pipeline = RAGPipeline(
+                TimedStore(store, timings),
+                TimedChat(chat, timings, "answer"),
+                top_k=self.settings.top_k,
+                retrieval_mode=self.settings.retrieval_mode,
+                reranker=TimedReranker(self._reranker, timings) if self._reranker is not None else None,
+                rerank_pool=self.settings.rerank_pool,
+                judge=judge,
+                judge_action="block" if public else self.settings.judge_action,
+            )
+            response = to_response(pipeline.ask(question, history), question)
+        except ProviderError as exc:
+            timings.log(channel, "error:" + provider_error_code(exc))
+            raise
+        except Exception as exc:
+            timings.log(channel, "error:" + type(exc).__name__)
+            raise
+        timings.log(channel, response.status)
+        return response
 
 
 class SampleChat:
@@ -78,7 +91,7 @@ class SampleChat:
             return self._store
 
     def ask(self, question: str, history: list[dict], provider: str) -> ChatResponse:
-        return self.chat.ask(self._get_store(), question, history, provider)
+        return self.chat.ask(self._get_store(), question, history, provider, channel="sample")
 
     def close(self) -> None:
         if self._store is not None:

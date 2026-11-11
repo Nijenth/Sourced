@@ -18,8 +18,9 @@ from sqlalchemy import select
 from rag.pipeline import NOT_FOUND_TEXT
 from rag.providers import ProviderError, make_embedder
 
-from .channels import client_ip, public_settings, reserve_question
-from .common import provider_failure, resolve_provider
+from .channels import client_ip, public_settings, refund_failed_question, reserve_question
+from .common import resolve_provider
+from .errors import provider_failure
 from .db import Db
 from .db.models import Document, Widget
 from .documents import page_png
@@ -119,6 +120,7 @@ def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, 
     header_key = request.headers.get("x-sourced-key")
     hint = site_key if site_key is not None else header_key
     headers = cors(None)
+    reserved = []
     try:
         widget = widget_for_key(db, hint, lock=True) if hint is not None else None
         if widget is not None:
@@ -144,13 +146,13 @@ def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, 
         key, access_version = widget.site_key, widget.access_version
         workspace_id, widget_id, provider, judge = widget.workspace_id, widget.id, widget.provider, widget.judge_enabled
         selected = set(document_ids(db, widget))
-        reserve_question(db, settings, workspace_id, widget_id, ip)
+        reserved = reserve_question(db, settings, workspace_id, widget_id, ip)
         answer = ChatResponse(status="not_found", text=NOT_FOUND_TEXT)
         if selected:
             store = PgVectorStore(request.state.sessions, make_embedder(), workspace_id, selected)
             answer = request.state.chat_service.ask(
                 store, body.question, [message.model_dump() for message in body.history], resolve_provider(provider),
-                judge_enabled=judge, public=True,
+                judge_enabled=judge, public=True, channel="widget",
             )
             if judge and answer.status == "answered" and (not answer.judgement or answer.judgement.verdict != "supported"):
                 answer = ChatResponse(status="unverified", text=BLOCKED)
@@ -183,10 +185,13 @@ def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, 
             )
         response.headers.update(headers)
         return record_answer(db, workspace_id, answer, channel=f"widget:{widget_id}")
-    except (ProviderError, KeywordSearchLimit) as exc:
-        error = provider_failure() if isinstance(exc, ProviderError) else HTTPException(503, "Chat is temporarily unavailable.")
-        error.headers = headers
+    except ProviderError as exc:
+        refund_failed_question(db, reserved)
+        error = provider_failure(exc, public=True)
+        error.headers = {**headers, **(error.headers or {})}
         raise error from None
+    except KeywordSearchLimit:
+        raise HTTPException(503, "Chat is temporarily unavailable.", headers=headers) from None
     except HTTPException as exc:
         exc.headers = {**headers, **(exc.headers or {})}
         raise
