@@ -17,8 +17,41 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.check.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        name: Did anything besides documentation change?
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # Run every check unless this is a pull request that only touches documentation or deploy settings.
+          code=true
+          if [ "$EVENT" = "pull_request" ] && files=$(git diff --name-only "$BASE" HEAD); then
+            code=false
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                *.md|docs/*|render.yaml|.env.example|frontend/screenshots/*) ;;
+                *) code=true ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Code or tests changed: $code"
+
   backend:
     name: Engine and API tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -42,6 +75,8 @@ jobs:
 
   frontend:
     name: Dashboard tests and build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -60,6 +95,8 @@ jobs:
 
   browser:
     name: Browser walkthroughs
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -80,7 +117,14 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: npm ci
         working-directory: frontend
-      - run: npx playwright install --with-deps chromium || npx playwright install chromium
+      # GitHub's Ubuntu image already has Chrome's system libraries, so only the browser itself is needed,
+      # and it's cached between runs. (Installing extra fonts with --with-deps was slow and flaky.)
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+      - run: npx playwright install chromium
         working-directory: frontend
       - name: Widget page events (stubbed API)
         run: npx playwright test widget-events.spec.ts
@@ -101,10 +145,21 @@ jobs:
 
   docker:
     name: Docker image
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image (reusing cached layers from earlier runs)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: sourced:local
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Write a test configuration (offline mode, no keys)
         run: |
           cat > .env <<'CONFIG'
@@ -114,8 +169,8 @@ jobs:
           SOURCED_DEMO_ADMIN_PASSWORD=ci-only demo password
           SOURCED_ALLOW_SIGNUP=0
           CONFIG
-      - name: Build and start (docker compose)
-        run: docker compose up --detach --build --wait --wait-timeout 300
+      - name: Start (docker compose)
+        run: docker compose up --detach --no-build --wait --wait-timeout 300
       - name: Smoke test the running system
         run: python3 deploy/smoke_test.py http://localhost:8000 240
       - name: Show logs on failure
