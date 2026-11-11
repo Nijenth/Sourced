@@ -117,7 +117,7 @@ export function Documents() {
       <div className="upload-copy">
         <strong>Drop PDFs here, or choose files</strong>
         {limits && <p>Up to {limits.max_bytes / 1024 ** 2} MB and {limits.max_pages} pages each.{' '}
-          {limits.embedding_provider ? 'Text is indexed by your search provider (' + limits.embedding_provider + '); ' : 'A search provider must be configured to index text. '}
+          {limits.embedding_provider ? 'Text is indexed by your search provider (' + limits.embedding_provider + '). ' : 'A search provider must be configured to index text. '}
           Only the passages relevant to a question go to the answer model.</p>}
         {!limits && !settings.error && <p>Loading upload limits…</p>}
         <ResourceError error={settings.error} refresh={settings.refresh} />

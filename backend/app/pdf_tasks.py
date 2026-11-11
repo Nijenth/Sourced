@@ -4,6 +4,7 @@ import io
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 from dataclasses import asdict, replace
@@ -73,16 +74,25 @@ def render_preview(data: bytes, page_number: int, quote: str = "") -> bytes:
 
             text = page.get_textpage()
             match = text.search(quote).get_next()
-            if match:
+            matches = [match] if match is not None else []
+            if not matches:
+                pieces = dict.fromkeys(piece.strip() for piece in re.split(r"\||…|\.\.\.", quote))
+                for piece in pieces:
+                    if len(piece) >= 4:
+                        match = text.search(piece).get_next()
+                        if match is not None:
+                            matches.append(match)
+            if matches:
                 image = image.convert("RGB")
                 draw = ImageDraw.Draw(image, "RGBA")
                 position = bitmap.get_posconv(page)
                 text.count_rects()
-                for index in range(text.count_rects(*match)):
-                    left, bottom, right, top = text.get_rect(index)
-                    x1, y1 = position.to_bitmap(left, top)
-                    x2, y2 = position.to_bitmap(right, bottom)
-                    draw.rectangle((min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)), fill=(255, 215, 66, 100))
+                for match in matches:
+                    for index in range(text.count_rects(*match)):
+                        left, bottom, right, top = text.get_rect(index)
+                        x1, y1 = position.to_bitmap(left, top)
+                        x2, y2 = position.to_bitmap(right, bottom)
+                        draw.rectangle((min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)), fill=(255, 215, 66, 100))
         output = io.BytesIO()
         image.save(output, format="PNG")
         return output.getvalue()

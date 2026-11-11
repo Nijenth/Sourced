@@ -119,9 +119,8 @@ td time { color: var(--muted); white-space: nowrap; }
 .question { justify-self: end; max-width: 80%; padding: 12px 16px; border-radius: 14px 14px 4px 14px; background: var(--ink); color: white; white-space: pre-wrap; overflow-wrap: anywhere; }
 .answer { display: grid; gap: 12px; padding: 20px; overflow-wrap: anywhere; }
 .answer-text { font-size: 16px; line-height: 1.65; white-space: pre-wrap; }
-.inline-citation { display: inline-grid; min-width: 44px; min-height: 44px; align-items: center; justify-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--teal-dark); vertical-align: middle; }
-.inline-citation span { display: grid; place-items: center; min-width: 22px; min-height: 22px; border-radius: 6px; padding: 0 5px; background: var(--tint); font-size: 12px; font-weight: 600; }
-.inline-citation:hover span { color: white; background: var(--teal); }
+.inline-citation { display: inline-block; min-width: 22px; height: 22px; padding: 0 4px; border: 0; border-radius: 6px; background: var(--tint); color: var(--teal-dark); font-size: 12px; font-weight: 600; line-height: 1; vertical-align: baseline; }
+.inline-citation:hover { color: white; background: var(--teal); }
 .citations { display: flex; flex-wrap: wrap; gap: 8px; }
 .citation-chip { min-height: 44px; max-width: 100%; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-strong); color: var(--body); background: var(--surface); text-align: left; font-size: 13px; overflow-wrap: anywhere; }
 .citation-chip:hover, .citation-chip.selected { border-color: var(--teal); color: var(--teal-dark); background: var(--tint); }

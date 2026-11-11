@@ -58,7 +58,7 @@ describe('Sourced dashboard', () => {
     })
     vi.stubGlobal('fetch', fetch)
     render(<Documents />)
-    expect(await screen.findByText(/Up to 10 MB and 80 pages/)).toHaveTextContent('OpenAI')
+    expect(await screen.findByText(/Up to 10 MB and 80 pages/)).toHaveTextContent('(OpenAI). Only the passages')
     expect(screen.getByRole('progressbar', { name: 'Processing Policy.pdf' })).toHaveValue(60)
     expect(screen.getByText('Couldn’t read')).toBeVisible()
     expect(screen.getByText('<b>Scan.pdf</b>')).toBeVisible()
@@ -109,7 +109,8 @@ describe('Sourced dashboard', () => {
     expect(screen.queryByText('Private rejected text')).not.toBeInTheDocument()
     view.rerender(<AnswerCard answer={{ ...answer, status: 'not_found', text: 'I couldn’t find that.',
       partial: false, searched_for: '', judgement: null }} open={open} />)
-    expect(screen.getByText('The documents don’t cover this question.')).toBeVisible()
+    expect(screen.getByText('I couldn’t find that.')).toBeVisible()
+    expect(screen.queryByText('The documents don’t cover this question.')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Source 1' })).not.toBeInTheDocument()
   })
 

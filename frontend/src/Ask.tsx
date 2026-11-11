@@ -12,7 +12,7 @@ function inlineCitations(text: string, citations: Citation[], open: OpenSource):
       const citation = citations.find((item) => item.number === Number(number))
       return citation ? <button key={index + '-' + position} className="inline-citation" type="button"
         aria-label={'Source ' + citation.number} onClick={(event) => open(citation, event.currentTarget)}>
-        <span>{citation.number}</span>
+        {citation.number}
       </button> : '[' + number.trim() + ']'
     })
   })
@@ -34,7 +34,6 @@ export function AnswerCard({ answer, open, selected }: { answer: Answer; open: O
       <p>I couldn’t verify an answer against the documents, so I’m not showing one.</p>
       {answer.reason && <p className="muted">{answer.reason}</p>}
     </> : <p className="answer-text">{inlineCitations(answer.text, answer.status === 'answered' ? answer.citations : [], open)}</p>}
-    {answer.status === 'not_found' && <p className="muted">The documents don’t cover this question.</p>}
     {answer.partial && !blocked && <p className="notice pending">The documents answer part of this question.</p>}
     {answer.searched_for && <p className="muted"><strong>Searched for</strong> {answer.searched_for}</p>}
     {judgement && <div>

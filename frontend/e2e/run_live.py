@@ -53,7 +53,7 @@ def main():
         if args.screenshots:
             directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
             preview = directory / "preview.png"
-            preview.write_bytes(render_preview(SAMPLE_PDF.read_bytes(), 4, "8 weeks"))
+            preview.write_bytes(render_preview(SAMPLE_PDF.read_bytes(), 4, "Lead, Principal and Director roles | 8 weeks"))
             env["SOURCED_PREVIEW_PNG"] = str(preview)
 
         api = subprocess.Popen(

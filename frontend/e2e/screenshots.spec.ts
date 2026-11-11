@@ -7,7 +7,7 @@ const date = new Date().toISOString().slice(0, 10)
 const member = { workspace_id: 'sample', workspace_name: 'Brightleaf Studio', email: 'admin@brightleaf.example' }
 const citation: Citation = {
   number: 1, document_id: '76f13c80-b1a5-4250-afd4-95c044f8be35', source: handbook, page: 4, verified: true,
-  quote: 'Lead, Principal and Director roles | Notice required (either side) — 8 weeks.',
+  quote: 'Lead, Principal and Director roles | 8 weeks',
   preview_url: null,
 }
 const answers: Answer[] = [
@@ -79,7 +79,23 @@ test('capture each dashboard and account page with fictional fixture data', asyn
   await question.fill('What’s the dress code for client meetings?')
   await question.press('Enter')
   await expect(page.getByText('The documents don’t cover a dress code.')).toBeVisible()
-  await page.getByRole('button', { name: 'Source 1' }).click()
+  const firstCitation = page.getByRole('button', { name: 'Source 1' })
+  const metrics = await firstCitation.evaluate((button) => {
+    const box = button.getBoundingClientRect()
+    const range = document.createRange()
+    range.setStart(button.nextSibling!, 0)
+    range.setEnd(button.nextSibling!, 1)
+    return {
+      punctuation: range.toString(),
+      gap: range.getBoundingClientRect().left - box.right,
+      height: box.height,
+      lineHeight: parseFloat(getComputedStyle(button.parentElement!).lineHeight),
+    }
+  })
+  expect(metrics.punctuation).toBe('.')
+  expect(Math.abs(metrics.gap)).toBeLessThan(1)
+  expect(metrics.height).toBeLessThan(metrics.lineHeight)
+  await firstCitation.click()
   await expect(page.getByRole('img', { name: 'Page 4 preview' })).toHaveJSProperty('complete', true)
   await save('ask')
   await page.goto('/usage')
