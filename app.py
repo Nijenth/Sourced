@@ -30,6 +30,7 @@ from rag.incident import format_incident_draft, policy_note  # noqa: E402
 from rag.judge import Judge  # noqa: E402
 from rag.rerank import make_reranker  # noqa: E402
 from rag.providers import (  # noqa: E402
+    PROVIDERS,
     ProviderError,
     chat_provider_names,
     embedding_provider_name,
@@ -265,6 +266,17 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
                 st.image(render_page(file_hash(data), c["page"], data), width="stretch")
 
 
+def upload_notice() -> str:
+    """Say plainly where uploaded text goes: the embedding provider indexes it, the chosen model reads passages."""
+    name = embedding_provider_name()
+    if name in ("ollama", "offline"):
+        where = "Indexed on this computer"
+    else:
+        where = f"Indexed by {PROVIDERS[name].label if name in PROVIDERS else name}"
+    return (f"Kept for this session only, never saved. {where}; relevant passages go to the model below "
+            "(Ollama keeps everything local). Don't upload confidential files to a public demo.")
+
+
 def _same_question(a: str, b: str) -> bool:
     simple = lambda s: " ".join(re.sub(r"[^\w\s]", " ", s.lower()).split())  # noqa: E731
     return simple(a) == simple(b)
@@ -335,7 +347,10 @@ ss.setdefault("upload", {"key": None, "store": None, "files": {}, "warnings": []
 
 with st.sidebar:
     st.subheader("Documents")
-    mode = st.radio("Knowledge base", [MODE_SAMPLE, MODE_UPLOAD], label_visibility="collapsed")
+    if settings.allow_uploads:
+        mode = st.radio("Knowledge base", [MODE_SAMPLE, MODE_UPLOAD], label_visibility="collapsed")
+    else:
+        mode = MODE_SAMPLE  # public demo: fictional handbook only
 
     store: VectorStore | None = None
     files: dict[str, bytes] = {}
@@ -346,6 +361,8 @@ with st.sidebar:
             "Ask about leave, remote work, expenses, equipment and more."
         )
         st.download_button("Download the handbook (PDF)", SAMPLE_PDF.read_bytes(), SAMPLE_PDF.name, "application/pdf")
+        if not settings.allow_uploads:
+            st.caption("This public demo uses the fictional handbook only. Run DocChat yourself to use your own PDFs.")
         try:
             store = sample_store(embedder.name, embedder)
         except ProviderError as exc:
@@ -376,7 +393,7 @@ with st.sidebar:
         store, files = ss.upload["store"], ss.upload["files"]
         if store is not None:
             st.success(f"Indexed {len(files)} file(s), {sum(store.sources.values())} pages.")
-        st.caption("Uploads are kept in memory for this session only and are never stored.")
+        st.caption(upload_notice())
 
     st.subheader("Model")
     providers = chat_provider_names()
@@ -466,7 +483,8 @@ if prompt:
                     reply = answer_to_message(pipeline.ask(prompt, history), prompt)
                     ss.asked += 1
                 except ProviderError as exc:
-                    reply = {"role": "assistant", "content": str(exc), "error": True}
+                    hint = " You can pick another model in the sidebar." if len(providers) > 1 else ""
+                    reply = {"role": "assistant", "content": str(exc) + hint, "error": True}
     messages.append({"role": "user", "content": prompt})
     messages.append(reply)
     st.rerun()

@@ -28,6 +28,7 @@ class Settings:
     rerank_model: str
     rerank_pool: int
     judge: bool
+    allow_uploads: bool
     judge_provider: str
     judge_action: str
     max_questions_per_session: int
@@ -47,6 +48,7 @@ def load_settings() -> Settings:
         rerank_model=os.getenv("RERANK_MODEL", "").strip(),
         rerank_pool=max(1, _int("RERANK_POOL", 20)),
         judge=os.getenv("JUDGE", "off").strip().lower() in {"1", "on", "true", "yes"},
+        allow_uploads=os.getenv("ALLOW_UPLOADS", "on").strip().lower() not in {"0", "off", "false", "no"},
         judge_provider=os.getenv("JUDGE_PROVIDER", "").strip().lower(),
         judge_action="block" if os.getenv("JUDGE_ACTION", "warn").strip().lower() == "block" else "warn",
         max_questions_per_session=_int("MAX_QUESTIONS_PER_SESSION", 25),

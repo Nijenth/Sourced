@@ -149,6 +149,7 @@ Every provider with a key appears in the model picker. `CHAT_PROVIDER` chooses w
    GROQ_API_KEY = "gsk_..."
    GEMINI_API_KEY = "..."
    EMBEDDING_PROVIDER = "gemini"
+   ALLOW_UPLOADS = "off"      # a public link offers only the fictional handbook
    REPO_URL = "https://github.com/your-name/rag-chatbot"
    ```
 4. Deploy, then put the app link at the top of this README.
@@ -231,6 +232,7 @@ All settings are environment variables; `.env.example` lists every one with comm
 | `JUDGE` / `JUDGE_PROVIDER` / `JUDGE_ACTION` | `off` / same as chat / `warn` | Accuracy judge; `block` hides answers judged unsupported |
 | `TOP_K` | `5` | Passages sent to the model per question |
 | `MAX_QUESTIONS_PER_SESSION` / `MAX_QUESTIONS_PER_DAY` | `25` / `300` | Usage limits for a public demo |
+| `ALLOW_UPLOADS` | `on` | `off` for a public demo: only the fictional handbook is offered |
 | `MAX_UPLOAD_FILES` / `MAX_UPLOAD_MB` / `MAX_UPLOAD_PAGES` | `3` / `10` / `80` | Upload limits |
 
 Per-provider models and options (`OPENAI_MODEL`, `GEMINI_MODEL`, `GROQ_MODEL`, `OLLAMA_THINK`, and so on) are documented in `.env.example`.
@@ -250,7 +252,7 @@ Being clear about what the checks do and don't guarantee:
 - **The benchmark is small.** 35 questions on one 16-page fictional handbook. With so few passages, reranking 20 candidates covers about half the document, which flatters the rerank results. Results on large real document sets will differ.
 - **Uploads live in memory for one browser session.** There are no user accounts. A client deployment would need login, per-user document storage and deletion before accepting private files.
 - **Scanned PDFs without a text layer** are rejected. OCR would let them work.
-- **Uploaded text is sent to the chosen AI provider** unless you use Ollama. Check each provider's data-retention terms before using real documents.
+- **Uploaded text is sent to the chosen AI provider** unless you use Ollama. The upload box says which provider receives it. Check each provider's data-retention terms before using real documents, and set `ALLOW_UPLOADS=off` for a public link.
 
 ## What's next
 
