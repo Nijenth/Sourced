@@ -1,6 +1,7 @@
 """Request and response bodies for the Sourced API."""
 
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -23,6 +24,10 @@ class ChatRequest(BaseModel):
     history: list[HistoryMessage] = Field(default_factory=list, max_length=6)
     provider: Identifier | None = None
     document_ids: list[Identifier] | None = Field(default=None, max_length=1)
+
+
+class WorkspaceChatRequest(ChatRequest):
+    document_ids: list[UUID] | None = Field(default=None, max_length=100)
 
 
 class ProviderStatus(BaseModel):
