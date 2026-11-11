@@ -260,5 +260,5 @@ Being clear about what the checks do and don't guarantee:
 
 - A relevance check in the judge ("does this answer the question asked?").
 - Persistent per-user storage with login (e.g. Postgres with pgvector).
-- A React front end on top of the same `rag/` engine; the engine has no Streamlit code in it.
+- A React + FastAPI version with accounts and private per-user documents, on the same `rag/` engine (the engine has no Streamlit code in it). The plan is in [`docs/fullstack-brief.md`](docs/fullstack-brief.md).
 - Streaming answers, OCR for scanned PDFs, and Word or web-page sources.
