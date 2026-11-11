@@ -10,8 +10,8 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import text
-from sqlalchemy.engine import URL
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import OperationalError
 
 from backend.app.db import database_engine
@@ -31,8 +31,48 @@ def docker(*args, env=None, timeout=240):
     return result.stdout.strip()
 
 
+def migrate_empty_database(engine) -> None:
+    with engine.begin() as connection:
+        assert connection.scalar(text("SELECT to_regclass('public.workspaces')")) is None
+        config = Config(str(ALEMBIC_INI), attributes={"connection": connection})
+        command.upgrade(config, "head")
+        assert connection.scalar(text("SELECT extversion FROM pg_extension WHERE extname = 'vector'"))
+
+
+@contextmanager
+def server_database(server_url: str):
+    """Create and drop a uniquely named database on an existing Postgres server with pgvector."""
+    server = make_url(server_url)
+    if server.drivername not in ("postgresql", "postgresql+psycopg"):
+        raise RuntimeError("SOURCED_TEST_DATABASE_URL must be a postgresql:// URL.")
+    server = server.set(drivername="postgresql+psycopg")
+    name = f"sourced_test_{uuid4().hex}"
+    admin = create_engine(server, isolation_level="AUTOCOMMIT", hide_parameters=True)
+    try:
+        try:
+            with admin.connect() as connection:
+                connection.execute(text(f'CREATE DATABASE "{name}"'))
+        except OperationalError:
+            raise DockerUnavailable("The Postgres server in SOURCED_TEST_DATABASE_URL is unreachable.") from None
+        engine = database_engine(server.set(database=name))
+        try:
+            migrate_empty_database(engine)
+            yield engine
+        finally:
+            engine.dispose()
+            with admin.connect() as connection:
+                connection.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+    finally:
+        admin.dispose()
+
+
 @contextmanager
 def disposable_postgres():
+    server_url = environ.get("SOURCED_TEST_DATABASE_URL")
+    if server_url:
+        with server_database(server_url) as engine:
+            yield engine
+        return
     try:
         os_type = docker("info", "--format", "{{.OSType}}", timeout=10)
     except FileNotFoundError:
@@ -75,11 +115,7 @@ def disposable_postgres():
                 "-c", "SELECT system_identifier FROM pg_control_system()",
             )
             assert str(system_id) == container_id, "Host connection is not reaching the disposable container."
-            with engine.begin() as connection:
-                assert connection.scalar(text("SELECT to_regclass('public.workspaces')")) is None
-                config = Config(str(ALEMBIC_INI), attributes={"connection": connection})
-                command.upgrade(config, "head")
-                assert connection.scalar(text("SELECT extversion FROM pg_extension WHERE extname = 'vector'"))
+            migrate_empty_database(engine)
             yield engine
         finally:
             engine.dispose()

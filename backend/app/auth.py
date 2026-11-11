@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, StringCo
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 
+from .channels import forgive_login, reserve_login, reserve_signup
 from .db import Db
 from .db.models import LoginSession, Membership, User, Workspace
 
@@ -111,7 +112,8 @@ def issue_session(db: Db, response: Response, member: Member) -> Member:
 
 
 @router.post("/signup", status_code=201, dependencies=[Depends(require_json)])
-def signup(body: Signup, db: Db, response: Response) -> Member:
+def signup(body: Signup, request: Request, db: Db, response: Response) -> Member:
+    reserve_signup(db, request.state.channels, request)
     email = body.email.casefold()
     user_id = db.scalar(
         insert(User)
@@ -132,8 +134,9 @@ def signup(body: Signup, db: Db, response: Response) -> Member:
 
 
 @router.post("/login", dependencies=[Depends(require_json)])
-def login(body: Credentials, db: Db, response: Response) -> Member:
+def login(body: Credentials, request: Request, db: Db, response: Response) -> Member:
     email = body.email.casefold()
+    attempt = reserve_login(db, request.state.channels, request, email)
     row = db.execute(
         select(User, Workspace, Membership.role)
         .join(Membership, Membership.user_id == User.id)
@@ -152,11 +155,12 @@ def login(body: Credentials, db: Db, response: Response) -> Member:
         passwords.verify(user.password_hash, password)
     except VerifyMismatchError:
         raise invalid from None
+    member = Member(id=user.id, email=user.email, workspace_id=workspace.id, workspace_name=workspace.name, role=role)
+    forgive_login(db, attempt)
+    user = db.get(User, member.id)
     if passwords.check_needs_rehash(user.password_hash):
         user.password_hash = passwords.hash(password)
-    return issue_session(db, response, Member(
-        id=user.id, email=user.email, workspace_id=workspace.id, workspace_name=workspace.name, role=role,
-    ))
+    return issue_session(db, response, member)
 
 
 @router.post("/logout", status_code=204)

@@ -1,5 +1,7 @@
 # Sourced: chat with your documents, with citations you can check
 
+[![CI](https://github.com/Nijenth/Sourced/actions/workflows/ci.yml/badge.svg)](https://github.com/Nijenth/Sourced/actions/workflows/ci.yml)
+
 Ask questions about your PDFs and get short answers drawn only from the documents. Every answer shows the file, the page and the exact passage behind it, and the app refuses to show answers it can't back up.
 
 **Live demo:** _add your Streamlit link here_

@@ -57,11 +57,16 @@ export interface UsageRow {
   blocked: number
 }
 
+/** Short codes the API sends with some errors, next to the friendly message in `detail`. */
+export type ErrorCode = 'rate_limited' | 'provider_unavailable' | 'misconfigured' | 'too_many_requests'
+
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code: ErrorCode | null = null) {
     super(message)
   }
 }
+
+const errorCodes = new Set<string>(['rate_limited', 'provider_unavailable', 'misconfigured', 'too_many_requests'])
 
 const prefix = '/api/v1'
 
@@ -80,7 +85,8 @@ async function request(path: string, options: RequestInit = {}): Promise<Respons
     const body = await response.json().catch(() => null)
     const detail = body?.detail
     const fieldError = Array.isArray(detail) && typeof detail[0]?.msg === 'string' ? detail[0].msg : ''
-    throw new ApiError(response.status, typeof detail === 'string' ? detail : fieldError || 'Something went wrong. Try again.')
+    const code = typeof body?.code === 'string' && errorCodes.has(body.code) ? body.code as ErrorCode : null
+    throw new ApiError(response.status, typeof detail === 'string' ? detail : fieldError || 'Something went wrong. Try again.', code)
   }
   return response
 }

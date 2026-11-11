@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  backend:
+    name: Engine and API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Fail instead of skipping when the Postgres tests can't start (the runner has Docker).
+      SOURCED_REQUIRE_DB_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            backend/requirements.txt
+      - run: pip install -r requirements-dev.txt
+      - name: pytest (engine, API, Postgres with pgvector in Docker)
+        run: python -m pytest -q
+      - name: Offline end-to-end evaluation
+        run: python eval/run_eval.py --provider offline
+
+  frontend:
+    name: Dashboard tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  browser:
+    name: Browser walkthroughs
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            backend/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -r requirements-dev.txt
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium || npx playwright install chromium
+        working-directory: frontend
+      - name: Widget page events (stubbed API)
+        run: npx playwright test widget-events.spec.ts
+        working-directory: frontend
+      - name: Dashboard keyboard walkthrough
+        run: python -m frontend.e2e.run_live
+      - name: Public website widget walkthrough
+        run: python -m frontend.e2e.run_live --widgets
+      - name: Signed-in widget and access-log walkthrough
+        run: python -m frontend.e2e.run_live --signed-in
+      - name: Keep Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: frontend/test-results
+          retention-days: 7

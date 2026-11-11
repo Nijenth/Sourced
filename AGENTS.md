@@ -22,6 +22,8 @@ python eval/run_eval.py --retrieval-only --provider offline   # retrieval compar
 
 No API keys are needed for tests. `RAG_OFFLINE_MODE=1` runs the whole app with keyword stand-ins.
 
+The Postgres-backed backend tests need Docker, or `SOURCED_TEST_DATABASE_URL` pointing at a Postgres server with pgvector (see `backend/README.md`). GitHub Actions runs every check, including the browser walkthroughs, on each push to `main` and each pull request; keep it green.
+
 ## Ownership
 
 | Path | Owner | Rule for agents |
