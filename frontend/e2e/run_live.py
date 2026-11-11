@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -32,6 +33,7 @@ def stop(process):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--screenshots", action="store_true")
+    parser.add_argument("--widgets", action="store_true", help="Run the M4 widget and hosted-chat walkthrough.")
     args = parser.parse_args()
     with ExitStack() as stack:
         engine = stack.enter_context(disposable_postgres())
@@ -50,14 +52,28 @@ def main():
             "MAX_UPLOAD_PAGES": "80",
             "SOURCED_E2E_LIVE": "1",
         }
-        if args.screenshots:
+        if args.widgets:
+            from .widget_fixtures import seed_widget_demo
+
+            env.update(
+                SOURCED_PUBLIC_ORIGIN="https://127.0.0.1:4173",
+                SOURCED_DASHBOARD_ORIGIN="https://127.0.0.1:4173",
+                SOURCED_PREVIEW_SECRET=secrets.token_urlsafe(32),
+                SOURCED_DEMO_SITE_KEY=seed_widget_demo(engine, api_url),
+                SOURCED_WIDGET_REQUESTS_PER_MINUTE="3",
+                SOURCED_IP_REQUESTS_PER_MINUTE="20",
+                SOURCED_WORKSPACE_QUESTIONS_PER_DAY="100",
+                SOURCED_E2E_WIDGETS="1",
+                SOURCED_E2E_WIDGET_SCREENSHOTS="1" if args.screenshots else "0",
+            )
+        elif args.screenshots:
             directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
             preview = directory / "preview.png"
             preview.write_bytes(render_preview(SAMPLE_PDF.read_bytes(), 4, "Lead, Principal and Director roles | 8 weeks"))
             env["SOURCED_PREVIEW_PNG"] = str(preview)
 
         api = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "backend.app.main:app", "--port", str(port), "--no-access-log"],
+            [sys.executable, "-m", "uvicorn", "backend.app.main:app", "--port", str(port), "--no-access-log", "--no-proxy-headers"],
             cwd=ROOT, env=env,
         )
         stack.callback(stop, api)
@@ -73,8 +89,9 @@ def main():
                 time.sleep(0.2)
         worker = subprocess.Popen([sys.executable, "-m", "backend.app.worker"], cwd=ROOT, env=env)
         stack.callback(stop, worker)
-        command = ["node", "node_modules/@playwright/test/cli.js", "test", "--workers=1", "keyboard.spec.ts"]
-        if args.screenshots:
+        spec = "widget.spec.ts" if args.widgets else "keyboard.spec.ts"
+        command = ["node", "node_modules/@playwright/test/cli.js", "test", "--workers=1", spec]
+        if args.screenshots and not args.widgets:
             command.append("screenshots.spec.ts")
         result = subprocess.run(command, cwd=ROOT / "frontend", env=env, check=False)
         return result.returncode

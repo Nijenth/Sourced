@@ -24,7 +24,7 @@ def postgres():
 @pytest.fixture
 def sessions(postgres, monkeypatch):
     with postgres.begin() as connection:
-        connection.execute(text("TRUNCATE workspaces, users CASCADE"))
+        connection.execute(text("TRUNCATE workspaces, users, question_limits CASCADE"))
     monkeypatch.setenv("SOURCED_DATABASE_URL", postgres.url.render_as_string(hide_password=False))
     monkeypatch.setenv("RAG_OFFLINE_MODE", "1")
     monkeypatch.setenv("TOP_K", "5")

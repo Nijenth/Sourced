@@ -38,6 +38,18 @@ The worker picks up queued uploads and can reclaim a job after its 15-minute lea
 
 Hybrid search uses exact pgvector cosine distance on the allowed chunks and the engine's BM25 and rank fusion. Keyword and hybrid searches support up to 10,000 chunks per request. Select fewer documents or configure dense search for larger libraries.
 
+## Website widgets
+
+Run the latest migrations and set `SOURCED_PUBLIC_ORIGIN` to the HTTPS origin that serves the public API, widget assets, and hosted chat. Set `SOURCED_PREVIEW_SECRET` to a random server-side value of at least 32 bytes. Use the same secret across API instances. Set `SOURCED_DASHBOARD_ORIGIN` only if the dashboard needs a separate CORS origin. The same-origin dashboard requires no CORS setting.
+
+The admin `/api/v1/widgets` routes use the workspace session and require CSRF on writes. Public site keys are safe to embed. A rotated site key invalidates the previous snippets, hosted links, and outstanding preview grants. If an administrator requests secret-key rotation via `POST /api/v1/widgets/{id}/rotate-keys`, the `sk_` value appears once in that response and is stored as a digest. Keep it on the client’s server. Signed-in chat and token issuance are planned for M5.
+
+Public chat accepts the key in `X-Sourced-Key` and checks the exact `Origin`. Cross-origin browsers also put the same public key in the `site_key` query parameter so the preflight can look up the widget before the key header is sent. The hosted chat origin is allowed for its own pages. Origin checks control browser access. Direct callers can forge an Origin header, so treat every attached document as public.
+
+Public questions count against `SOURCED_WIDGET_REQUESTS_PER_MINUTE` and `SOURCED_IP_REQUESTS_PER_MINUTE`. `SOURCED_WORKSPACE_QUESTIONS_PER_DAY` counts admitted admin and public questions together and resets at midnight UTC. The defaults are 20 per widget per minute, 10 per IP per minute, and 300 per workspace per day. Limits use the connection address reported by the ASGI server. When running the API directly, use `--no-proxy-headers`. Behind a proxy, configure Uvicorn to trust forwarding headers only from that proxy and have it replace incoming forwarding headers.
+
+Cited-page previews expire after ten minutes. The grant binds the current site key, the citation’s page, and the requesting IP and origin. Detaching or deleting the document also invalidates its previews. The public routes ignore session cookies.
+
 ## Verify locally
 
 Run Docker with Linux containers enabled. Tests create a disposable Postgres container on a random loopback port, verify its identity, run Alembic, and stop it afterward. The test connection comes from that container.

@@ -1,32 +1,39 @@
 """FastAPI entry point for the authenticated Sourced API."""
 
 from contextlib import asynccontextmanager
+from os import environ
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
+from starlette.middleware.cors import CORSMiddleware
 
 from rag.config import load_settings
 from rag.pipeline import NOT_FOUND_TEXT
 from rag.providers import ProviderError, make_embedder
 
 from .auth import VerifiedMember, get_member, router as auth_router
+from .channels import ChannelSettings, canonical_origin, reserve_question
 from .chat import ChatService
 from .common import api, provider_failure, providers, resolve_provider
 from .db import Db, database_engine
 from .db.models import Document
 from .documents import router as documents_router
+from .public import api as public_api, pages as public_pages
 from .schemas import ChatResponse, WorkspaceChatRequest
 from .settings import DocumentLimits
 from .store import KeywordSearchLimit, PgVectorStore
 from .usage import record_answer, router as usage_router
+from .widget_assets import router as widget_assets
+from .widgets import router as widgets_router
 
 admin = APIRouter(prefix="/api/v1")
 admin.include_router(auth_router)
 admin.include_router(documents_router)
 admin.include_router(usage_router)
+admin.include_router(widgets_router)
 admin.add_api_route("/providers", providers, methods=["GET"], dependencies=[Depends(get_member)])
 
 
@@ -39,6 +46,7 @@ async def lifespan(_app: FastAPI):
             "sessions": sessionmaker(engine),
             "document_limits": limits,
             "chat_service": ChatService(load_settings()),
+            "channels": ChannelSettings.from_env(),
         }
     finally:
         engine.dispose()
@@ -53,6 +61,7 @@ def chat(body: WorkspaceChatRequest, request: Request, db: Db, member: VerifiedM
         if selected != set(db.scalars(owned)):
             raise HTTPException(404, "Document not found.")
     provider = resolve_provider(body.provider)
+    reserve_question(db, request.state.channels, member.workspace_id)
     if db.scalar(owned.where(Document.status == "ready").limit(1)) is None:
         return record_answer(db, member.workspace_id, ChatResponse(status="not_found", text=NOT_FOUND_TEXT))
 
@@ -72,6 +81,31 @@ def chat(body: WorkspaceChatRequest, request: Request, db: Db, member: VerifiedM
 app = FastAPI(title="Sourced API", version="1.0.0", lifespan=lifespan)
 app.include_router(api)
 app.include_router(admin)
+app.include_router(public_api)
+app.include_router(public_pages)
+app.include_router(widget_assets)
+
+
+class DashboardCors:
+    def __init__(self, app):
+        self.app = app
+        self.dashboard = None
+        origin = environ.get("SOURCED_DASHBOARD_ORIGIN")
+        if origin:
+            self.dashboard = CORSMiddleware(
+                app, allow_origins=[canonical_origin(origin)], allow_credentials=True,
+                allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type", "X-CSRF-Token"],
+            )
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "")
+        handler = self.app
+        if self.dashboard and scope["type"] == "http" and path.startswith("/api/v1/") and not path.startswith("/api/v1/public/"):
+            handler = self.dashboard
+        await handler(scope, receive, send)
+
+
+app.add_middleware(DashboardCors)
 
 
 @app.exception_handler(RequestValidationError)

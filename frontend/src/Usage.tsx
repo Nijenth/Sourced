@@ -32,7 +32,7 @@ export function Usage() {
           {columns.map(({ key, label }) => <th key={key} scope="col">{label}</th>)}</tr></thead>
         <tbody>{rows.map((row) => <tr key={row.day + row.channel}>
           <th scope="row"><time dateTime={row.day}>{format.format(new Date(row.day))}</time></th>
-          <td>{row.channel === 'ask_test' ? 'Ask (test)' : row.channel}</td>
+          <td>{row.channel === 'ask_test' ? 'Ask (test)' : row.channel_label ?? 'Website widget'}</td>
           {columns.map(({ key }) => <td key={key}>{row[key].toLocaleString()}</td>)}
         </tr>)}</tbody>
       </table>
