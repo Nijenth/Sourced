@@ -142,17 +142,17 @@ The app opens at http://localhost:8501. The reranker downloads a small model (ab
 
 Every provider with a key appears in the model picker. `CHAT_PROVIDER` chooses which comes first. Changing `EMBEDDING_PROVIDER` re-indexes the documents automatically.
 
-### Run the Sourced API
+### Run the Sourced sample API
 
-The milestone M1 API runs locally on Python 3.12 with the fictional Brightleaf Studio handbook. It builds the index in memory on the first chat request. The sample API has no authentication.
+The sample API runs locally on Python 3.12 with the fictional Brightleaf Studio handbook. It builds the index in memory on the first chat request. The sample API has no authentication.
 
 ```powershell
 pip install -r backend/requirements.txt
 $env:RAG_OFFLINE_MODE = "1"
-python -m uvicorn backend.app.main:app
+python -m uvicorn backend.app.sample:app
 ```
 
-On macOS or Linux, run `RAG_OFFLINE_MODE=1 python -m uvicorn backend.app.main:app` after installing the requirements.
+On macOS or Linux, run `RAG_OFFLINE_MODE=1 python -m uvicorn backend.app.sample:app` after installing the requirements.
 
 Open the interactive API docs at `http://127.0.0.1:8000/docs`. `GET /api/v1/health` checks liveness. `GET /api/v1/providers` lists chat providers and their configuration status. Try `POST /api/v1/chat` with this JSON body.
 
@@ -160,9 +160,11 @@ Open the interactive API docs at `http://127.0.0.1:8000/docs`. `GET /api/v1/heal
 {"question": "How many days of annual leave do I get?", "provider": "offline"}
 ```
 
-`provider` defaults to the first configured provider. Omit `document_ids` or send `["brightleaf-handbook"]` to search the sample. `history` accepts up to six recent `user` or `assistant` messages with a `content` field. The API returns page numbers in citations and leaves `preview_url` null in M1.
+`provider` defaults to the first configured provider. Omit `document_ids` or send `["brightleaf-handbook"]` to search the sample. `history` accepts up to six recent `user` or `assistant` messages with a `content` field. The sample API returns page numbers in citations and leaves `preview_url` null.
 
 To use a configured AI provider, start Uvicorn with the provider settings in the environment and offline mode disabled. Set `RERANKER=none` to skip loading the cross-encoder model.
+
+See the [Sourced backend guide](backend/README.md) for the workspace API, database setup, worker, and Docker-backed tests.
 
 ## Deploy a live demo (free)
 

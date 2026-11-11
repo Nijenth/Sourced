@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import chat
-from backend.app.main import app
+from backend.app.sample import app
 from rag.citations import BLOCKED_TEXT, UNVERIFIED, Answer
 from rag.judge import Judgement
 from rag.offline import KeywordChat
