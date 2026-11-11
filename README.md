@@ -15,10 +15,11 @@ The demo opens with a 16-page employee handbook for **Brightleaf Studio, a ficti
 | | |
 | --- | --- |
 | **Five AI providers, one interface** | OpenAI, Anthropic (Claude), Google Gemini, GroqCloud and Ollama (fully local). Mix and match: one provider for search, another for answers. |
-| **Hybrid search + reranking** | Keyword search (BM25, written from scratch) and meaning-based search, fused with Reciprocal Rank Fusion, then reordered by a local cross-encoder. Right page in the top 5 for **100%** of test questions, ranked first almost every time (**MRR 0.97**). |
+| **Hybrid search + reranking** | Keyword search (BM25, written from scratch) and meaning-based search, fused with Reciprocal Rank Fusion, then reordered by a local cross-encoder. Right page in the top 5 for **100%** of test questions, and ranked first for every one of them (**MRR 1.00**). |
+| **Reads tables properly** | PDF tables usually come out as run-on text. DocChat rebuilds each row with its column header ("Lead, Principal and Director roles \| Notice required — 8 weeks"), which raised every search method's ranking. |
 | **Fail-closed citations** | Quotes are checked against the PDF, and every number in an answer must appear in a cited source. Answers that fail are hidden and the closest passages are shown instead. |
 | **Accuracy judge** | An optional second model checks each claim against its passages. It caught **33 of 33** deliberately tampered answers. |
-| **Measured, not guessed** | A 35-question evaluation in 7 categories, a free retrieval comparison, a tamper test for the judge, and **126 automated tests**. |
+| **Measured, not guessed** | A 35-question evaluation in 7 categories, a free retrieval comparison, a tamper test for the judge, and **137 automated tests**. |
 | **Can run free and private** | With Ollama, everything runs on your own computer: no API keys, no cost, no data leaving the machine. |
 
 ## How it works
@@ -44,6 +45,14 @@ flowchart LR
 
 **The answer contract.** The model must reply with JSON: an answer with `[n]` markers, a quote for each source, and a `coverage` of `full`, `partial` or `none`. "Partial" lets the model say "the documents give a rule, not the exact figure" without having to choose between a guess and a refusal.
 
+**Reading tables.** PDF readers usually turn a table into run-on text ("…After probation 4 weeks Lead, Principal and Director roles 8 weeks"), and neither the search nor the model can tell which value belongs to which row. DocChat reads each page twice: normally, for the text, and in pypdf's layout mode, which keeps wide gaps between columns. Lines with those gaps are recognised as table rows and rewritten with their column header:
+
+```
+Lead, Principal and Director roles | Notice required (either side) — 8 weeks.
+```
+
+Rows are never split between passages, and ordinary text, footers and multi-column pages are left as they were.
+
 **The checks, in order:**
 1. **Shape:** malformed JSON gets one retry, then is refused.
 2. **Sources exist:** a marker like `[7]` must point at a passage the model was actually given.
@@ -57,18 +66,19 @@ All results use the fictional handbook, measured in November 2026. AI answers va
 
 ### Retrieval: which search finds the right page? (no AI calls, free to reproduce)
 
-`python eval/run_eval.py --retrieval-only` on the 26 answerable, non-follow-up questions, with `nomic-embed-text` embeddings and top 5 passages:
+`python eval/run_eval.py --retrieval-only` on the 26 answerable, non-follow-up questions, with `nomic-embed-text` embeddings and top 5 passages. "Right page in top 5" / MRR (1.00 = the right page is always ranked first):
 
-| Search | Right page in top 5 | MRR (1.00 = always ranked first) |
+| Search | Tables as run-on text | With table reading (current) |
 | --- | --- | --- |
-| Dense (meaning only) | 96% | 0.88 |
-| BM25 (keywords only) | 100% | 0.93 |
-| Hybrid (dense + BM25, RRF) | 100% | 0.90 |
-| Dense + rerank | 100% | 0.96 |
-| **Hybrid + rerank (default)** | **100%** | **0.96** |
+| Dense (meaning only) | 96% / 0.88 | 100% / 0.96 |
+| BM25 (keywords only) | 100% / 0.93 | 100% / 0.94 |
+| Hybrid (dense + BM25, RRF) | 100% / 0.90 | 100% / 0.98 |
+| Dense + rerank | 100% / 0.96 | 100% / 1.00 |
+| **Hybrid + rerank (default)** | **100% / 0.96** | **100% / 1.00** |
 
-- Hybrid search fixed the one question dense search missed ("I'm a Director and I'm resigning…"), where the exact word "Director" matters.
-- Reranking moved the right page to rank 1 far more often.
+- **Hybrid search** fixed the one question dense search missed ("I'm a Director and I'm resigning…"), where the exact word "Director" matters.
+- **Reranking** moved the right page to rank 1 far more often.
+- **Reading tables row by row** helped every method. The "Director" row now carries its own context ("Notice required — 8 weeks"), so it is found and ranked on its own merits instead of being buried at the end of a page about probation.
 - BM25 alone does well here because this handbook is small and the questions reuse its wording. Hybrid is the default because real users often phrase things in words the documents don't use.
 
 ### End to end: 35 hard questions
@@ -77,8 +87,8 @@ All results use the fictional handbook, measured in November 2026. AI answers va
 
 | Check | Result |
 | --- | --- |
-| Fully correct (right facts and right page, or a correct refusal) | 34–35 / 35 across runs |
-| Right page found (Hit@5) / MRR | 100% / 0.97 |
+| Fully correct (right facts and right page, or a correct refusal) | 35 / 35 on both runs since table reading (34–35 before) |
+| Right page found (Hit@5) / MRR | 100% / 1.00 |
 | Correct answers wrongly blocked by the checks | 0 |
 
 The 35 questions cover 7 categories: basic facts, exceptions hidden in tables, paraphrases ("my laptop got nicked"), exact terms, multi-part questions, follow-ups that need conversation history, and near-misses where the topic exists but the detail doesn't. GroqCloud (`gpt-oss-120b`) scored in the same range.
@@ -92,7 +102,7 @@ The 35 questions cover 7 categories: basic facts, exceptions hidden in tables, p
 | Tampered answers caught (a number swapped for another from the same passage) | 33 / 33 |
 | Correct answers approved | 7 / 7 on the latest run (27 / 29 before tightening the judge's instructions) |
 
-A swapped number from the same passage is exactly the error the deterministic checks can't see, because the number *does* exist in the source.
+A swapped number from the same passage is exactly the error the deterministic checks can't see, because the number *does* exist in the source. Since these runs, the judge also sees every retrieved passage (not only the cited ones), so it can catch an answer that wrongly says "the documents don't give this"; re-run the command above to refresh these numbers.
 
 ## Run it locally
 
@@ -157,6 +167,18 @@ python eval/run_eval.py --provider ollama --judge groq --tamper  # test the accu
 
 Other options: `--retrieval dense|bm25|hybrid`, `--rerank none|cross-encoder`. When an answer is blocked, the output shows the model's raw reply and the reason, so you can see whether the block was right. Reports are written to `eval/results.md` and `eval/ablation.md`.
 
+### When an answer looks wrong
+
+```bash
+python scripts/search.py "your question"            # what each search method retrieved, with scores
+python scripts/search.py "your question" --page 4   # ...plus exactly how page 4 is stored
+python scripts/inspect_pdf.py 4                     # how the PDF reader sees page 4, line by line
+```
+
+These two scripts found the table problem above: the right page *was* retrieved, but its table had been flattened into text the model couldn't read.
+
+In the app, a follow-up question is rewritten into a full question before searching; when that changes the wording, the answer shows "Searched for: …", so a reinterpretation is never silent.
+
 ## Tests
 
 ```bash
@@ -164,7 +186,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-126 tests, no API keys needed: PDF handling, chunking, BM25 and rank fusion, reranking, every provider adapter (against fake clients), the citation checks (including real quotes the models gave that were once wrongly rejected), the judge, and the evaluation's own scoring rules. One test is marked as an expected failure: it documents a known limitation (below), and pytest will flag it if that limitation is ever fixed.
+137 tests, no API keys needed: PDF handling and table reading, chunking, BM25 and rank fusion, reranking, every provider adapter (against fake clients), the citation checks (including real quotes the models gave that were once wrongly rejected), the judge, and the evaluation's own scoring rules. One test is marked as an expected failure: it documents a known limitation (below), and pytest will flag it if that limitation is ever fixed.
 
 ## Project structure
 
@@ -183,11 +205,14 @@ rag/
   pipeline.py                Follow-up rewriting, retrieval, prompting, retry
   citations.py               Answer parsing and the fail-closed checks
   judge.py                   Accuracy judge and the tamper helper
+  incident.py                Sample-mode incident report draft (a template, no AI)
   offline.py                 Keyword stand-ins for tests and offline mode
   config.py                  App settings and limits
 eval/                        35 questions, scoring script, reports
 tests/                       pytest suite
 data/sample/                 Sample handbook (fictional company)
+scripts/search.py            Debug: what each search method retrieves for a question
+scripts/inspect_pdf.py       Debug: how the PDF reader sees a page
 scripts/make_sample_handbook.py   Regenerates the sample PDF
 ```
 
@@ -218,6 +243,9 @@ Being clear about what the checks do and don't guarantee:
 - **Inside a table, a value swapped for another value from the same table can pass the quote and number checks.** This is documented as an expected-failure test. The accuracy judge catches this kind of error (33/33 in the tamper test), but it's optional and is a model itself.
 - **The judge is a model and can be wrong,** and it's more lenient when judging its own answers. Use a different provider for judging, and treat its verdict as a strong signal, not proof.
 - **Answers sometimes address a related question.** For example, "What's the stock price?" can get "the documents don't give one; Brightleaf doesn't offer stock options." A relevance check in the judge is a natural next step.
+- **Table detection relies on visible column gaps.** Tables drawn as images, or with columns too close together, are still read as plain text; cells that wrap onto several lines may not be rebuilt cleanly.
+- **Section headings run into the next sentence** in stored passages (e.g. "Annual leave Full-time employees get…"), because headings have no full stop. Harmless for search and answers; slightly untidy in the quote box.
+- **Follow-up rewriting can reinterpret what you typed** (e.g. it read "Dictator" as "Director" from the previous question). The app shows "Searched for: …" whenever this happens.
 - **Calculated numbers are blocked.** "12 months × $40 = $480" is refused because 480 isn't in the source.
 - **The benchmark is small.** 35 questions on one 16-page fictional handbook. With so few passages, reranking 20 candidates covers about half the document, which flatters the rerank results. Results on large real document sets will differ.
 - **Uploads live in memory for one browser session.** There are no user accounts. A client deployment would need login, per-user document storage and deletion before accepting private files.
