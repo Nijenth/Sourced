@@ -17,11 +17,14 @@ class HistoryMessage(BaseModel):
     content: HistoryText
 
 
-class ChatRequest(BaseModel):
+class PublicChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: Question
     history: list[HistoryMessage] = Field(default_factory=list, max_length=6)
+
+
+class ChatRequest(PublicChatRequest):
     provider: Identifier | None = None
     document_ids: list[Identifier] | None = Field(default=None, max_length=1)
 

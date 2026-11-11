@@ -5,7 +5,7 @@ Run these commands from the repository root with Python 3.12. Set `SOURCED_DATAB
 ```sh
 python -m pip install -r backend/requirements.txt
 python -m alembic -c backend/alembic.ini upgrade head
-python -m uvicorn backend.app.main:app --ssl-keyfile path/to/key.pem --ssl-certfile path/to/cert.pem
+python -m uvicorn backend.app.main:app --no-proxy-headers --ssl-keyfile path/to/key.pem --ssl-certfile path/to/cert.pem
 ```
 
 Start the worker in a separate shell with the same database URL and embedding settings.
@@ -37,6 +37,20 @@ PDFs are stored in Postgres under their document IDs. Defaults allow 10 MiB per 
 The worker picks up queued uploads and can reclaim a job after its 15-minute lease expires. A job gets up to three attempts per upload or reindexing run. Invalid PDFs and other known errors can fail immediately with a document status message. When the embedding model changes, the worker reindexes ready documents from their stored PDFs. Retrieval excludes documents indexed by a different model until they are ready again. Run the API and all workers with the same embedding configuration.
 
 Hybrid search uses exact pgvector cosine distance on the allowed chunks and the engine's BM25 and rank fusion. Keyword and hybrid searches support up to 10,000 chunks per request. Select fewer documents or configure dense search for larger libraries.
+
+## Website widgets
+
+Run the latest migrations and set `SOURCED_PUBLIC_ORIGIN` to the HTTPS origin that serves the public API, widget assets, and hosted chat. Set `SOURCED_PREVIEW_SECRET` to a random server-side value of at least 32 bytes. Use the same secret across API instances. Set `SOURCED_DASHBOARD_ORIGIN` only if the dashboard needs a separate CORS origin. The same-origin dashboard requires no CORS setting.
+
+The admin `/api/v1/widgets` routes use the workspace session and require CSRF on writes. Public site keys are safe to embed. A rotated site key invalidates the previous snippets, hosted links, and outstanding preview grants. If an administrator requests secret-key rotation via `POST /api/v1/widgets/{id}/rotate-keys`, the `sk_` value appears once in that response and is stored as a digest. Keep it on the client’s server. Signed-in chat and token issuance are planned for M5.
+
+Public chat accepts the key in `X-Sourced-Key` and checks the exact `Origin`. Cross-origin browsers also put the same public key in the `site_key` query parameter so the preflight can look up the widget before the key header is sent. The Sourced origin and hosted link require per-widget opt-in. Origin checks control browser access. Direct callers can forge an Origin header, so treat every attached document as public.
+
+Public questions count against `SOURCED_WIDGET_REQUESTS_PER_MINUTE` and `SOURCED_IP_REQUESTS_PER_MINUTE`. `SOURCED_WORKSPACE_QUESTIONS_PER_DAY` counts admitted admin and public questions together and resets at midnight UTC. The defaults are 20 per widget per minute, 10 per IP per minute, and 300 per workspace per day.
+
+Run Uvicorn with `--no-proxy-headers` so Sourced receives the direct connection address. Behind a proxy, list its IP or CIDR in the comma-separated `SOURCED_TRUSTED_PROXIES` setting. Each trusted proxy must append the address it received the request from. Sourced walks `X-Forwarded-For` from right to left past trusted proxies and uses the first untrusted IP. The default trust list is empty. IPv6 clients share a /64 identity for rate limits and previews.
+
+Cited-page previews expire after ten minutes. The grant binds the current site key, the citation’s page, and the requesting IP and origin. Detaching or deleting the document also invalidates its previews. The public routes ignore session cookies.
 
 ## Verify locally
 

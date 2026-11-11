@@ -30,11 +30,15 @@ class ChatService:
         self._reranker: Reranker | None = None
         self._reranker_lock = Lock()
 
-    def ask(self, store: VectorStore | PgVectorStore, question: str, history: list[dict], provider: str) -> ChatResponse:
+    def ask(
+        self, store: VectorStore | PgVectorStore, question: str, history: list[dict], provider: str,
+        *, judge_enabled: bool | None = None, public: bool = False,
+    ) -> ChatResponse:
         chat = make_chat(provider)
         judge = None
+        check_accuracy = self.settings.judge if judge_enabled is None else judge_enabled
         if not self.settings.fake_mode:
-            if self.settings.judge:
+            if check_accuracy:
                 judge = Judge(make_chat(self.settings.judge_provider) if self.settings.judge_provider else chat)
             if self.settings.reranker != "none":
                 with self._reranker_lock:
@@ -48,7 +52,7 @@ class ChatService:
             reranker=self._reranker,
             rerank_pool=self.settings.rerank_pool,
             judge=judge,
-            judge_action=self.settings.judge_action,
+            judge_action="block" if public else self.settings.judge_action,
         )
         return to_response(pipeline.ask(question, history), question)
 

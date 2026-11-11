@@ -210,16 +210,21 @@ def highlighted_preview(
 
 @router.get("/{document_id}/pages/{page}.png", responses={200: {"content": {"image/png": {}}}})
 def preview(document_id: UUID, page: int, request: Request, db: Db, member: CurrentMember) -> Response:
-    owned_id = owned_page(db, member.workspace_id, document_id, page)
+    png = page_png(db, member.workspace_id, document_id, page, request.state.document_limits.timeout)
+    return Response(png, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+
+
+def page_png(db: Db, workspace_id: UUID, document_id: UUID, page: int, timeout: int) -> bytes:
+    owned_id = owned_page(db, workspace_id, document_id, page)
     png = db.scalar(select(PagePreview.png).where(PagePreview.document_id == owned_id, PagePreview.page == page))
     if png is None:
         data = db.scalar(select(DocumentFile.pdf).where(DocumentFile.document_id == owned_id))
         if data is None:
             raise HTTPException(404, "Document page not found.")
         try:
-            png = run_pdf_task("preview", data, str(page), timeout=request.state.document_limits.timeout)
+            png = run_pdf_task("preview", data, str(page), timeout=timeout)
         except PdfTaskError:
             raise HTTPException(422, "This page could not be rendered.") from None
         db.execute(insert(PagePreview).values(document_id=owned_id, page=page, png=png).on_conflict_do_nothing())
         db.commit()
-    return Response(png, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+    return png

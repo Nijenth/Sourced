@@ -6,9 +6,9 @@ from uuid import UUID, uuid4
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     CheckConstraint, Computed, DateTime, ForeignKey, ForeignKeyConstraint, Index,
-    LargeBinary, String, Text, UniqueConstraint, func,
+    LargeBinary, String, Text, UniqueConstraint, false, func,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -58,6 +58,7 @@ class Document(Base):
         CheckConstraint("status IN ('queued', 'processing', 'ready', 'failed')", name="document_status"),
         CheckConstraint("progress BETWEEN 0 AND 100", name="document_progress"),
         CheckConstraint("attempts >= 0", name="document_attempts"),
+        UniqueConstraint("id", "workspace_id", name="uq_documents_workspace"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
@@ -107,8 +108,48 @@ class UsageDaily(Base):
     __tablename__ = "usage_daily"
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
     day: Mapped[date] = mapped_column(primary_key=True)
-    channel: Mapped[str] = mapped_column(String(32), primary_key=True)
+    channel: Mapped[str] = mapped_column(String(64), primary_key=True)
     questions: Mapped[int]
     answered: Mapped[int]
     not_found: Mapped[int]
     blocked: Mapped[int]
+
+
+class Widget(Base):
+    __tablename__ = "widgets"
+    __table_args__ = (UniqueConstraint("id", "workspace_id", name="uq_widgets_workspace"),)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    site_key: Mapped[str] = mapped_column(String(64), unique=True)
+    secret_key_hash: Mapped[str | None] = mapped_column(String(64))
+    access_mode: Mapped[str] = mapped_column(String(16))
+    allowed_origins: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    provider: Mapped[str] = mapped_column(String(32))
+    judge_enabled: Mapped[bool]
+    hosted_page_enabled: Mapped[bool] = mapped_column(server_default=false())
+    title: Mapped[str] = mapped_column(String(100))
+    greeting: Mapped[str] = mapped_column(Text)
+    brand_color: Mapped[str] = mapped_column(String(7))
+    fallback_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class WidgetDocument(Base):
+    __tablename__ = "widget_documents"
+    __table_args__ = (
+        ForeignKeyConstraint(["widget_id", "workspace_id"], ["widgets.id", "widgets.workspace_id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["document_id", "workspace_id"], ["documents.id", "documents.workspace_id"], ondelete="CASCADE"),
+        Index("ix_widget_documents_document_id", "document_id"),
+    )
+    widget_id: Mapped[UUID] = mapped_column(primary_key=True)
+    document_id: Mapped[UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[UUID]
+
+
+class QuestionLimit(Base):
+    __tablename__ = "question_limits"
+    scope: Mapped[str] = mapped_column(String(20), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(primary_key=True, index=True)
+    requests: Mapped[int]

@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { BarChart3, FileText, LogOut, MessageCircle } from 'lucide-react'
+import { BarChart3, CodeXml, FileText, LogOut, MessageCircle } from 'lucide-react'
 import { Link, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { api, ApiError, errorMessage, post, type Member } from './api'
 import { Brand, ErrorMessage, Heading } from './common'
 import { Documents } from './Documents'
 import { Ask } from './Ask'
 import { Usage } from './Usage'
+import { WidgetSettings } from './WidgetSettings'
 
 export function AuthForm({ signup, onSuccess }: { signup: boolean; onSuccess: (member: Member) => void }) {
   const [error, setError] = useState('')
@@ -51,6 +52,7 @@ export function AuthForm({ signup, onSuccess }: { signup: boolean; onSuccess: (m
 const navigation = [
   { href: '/documents', label: 'Documents', Icon: FileText },
   { href: '/ask', label: 'Ask (test)', Icon: MessageCircle },
+  { href: '/widgets', label: 'Website widget', Icon: CodeXml },
   { href: '/usage', label: 'Usage', Icon: BarChart3 },
 ]
 
@@ -131,6 +133,7 @@ export function App() {
       <Routes>
         <Route path="/documents" element={<Documents />} />
         <Route path="/ask" element={<Ask />} />
+        <Route path="/widgets" element={<WidgetSettings />} />
         <Route path="/usage" element={<Usage />} />
         <Route path="*" element={<Navigate to="/documents" replace />} />
       </Routes>

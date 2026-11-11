@@ -50,6 +50,7 @@ export interface Answer {
 export interface UsageRow {
   day: string
   channel: string
+  channel_label?: string
   questions: number
   answered: number
   not_found: number
