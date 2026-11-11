@@ -4,6 +4,7 @@ import io
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 from dataclasses import asdict, replace
@@ -57,7 +58,7 @@ def extract_chunks(data: bytes, filename: str, max_characters: int, timeout: int
     return chunks
 
 
-def render_preview(data: bytes, page_number: int) -> bytes:
+def render_preview(data: bytes, page_number: int, quote: str = "") -> bytes:
     import pypdfium2 as pdfium
 
     pdf = pdfium.PdfDocument(data)
@@ -67,8 +68,33 @@ def render_preview(data: bytes, page_number: int) -> bytes:
         if not math.isfinite(longest) or longest <= 0:
             raise ValueError("Invalid page size.")
         bitmap = page.render(scale=min(1.6, (PREVIEW_MAX_SIDE - 1) / longest))
+        image = bitmap.to_pil()
+        if quote:
+            from PIL import ImageDraw
+
+            text = page.get_textpage()
+            match = text.search(quote).get_next()
+            matches = [match] if match is not None else []
+            if not matches:
+                pieces = dict.fromkeys(piece.strip() for piece in re.split(r"\||…|\.\.\.", quote))
+                for piece in pieces:
+                    if len(piece) >= 4:
+                        match = text.search(piece).get_next()
+                        if match is not None:
+                            matches.append(match)
+            if matches:
+                image = image.convert("RGB")
+                draw = ImageDraw.Draw(image, "RGBA")
+                position = bitmap.get_posconv(page)
+                text.count_rects()
+                for match in matches:
+                    for index in range(text.count_rects(*match)):
+                        left, bottom, right, top = text.get_rect(index)
+                        x1, y1 = position.to_bitmap(left, top)
+                        x2, y2 = position.to_bitmap(right, bottom)
+                        draw.rectangle((min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)), fill=(255, 215, 66, 100))
         output = io.BytesIO()
-        bitmap.to_pil().save(output, format="PNG")
+        image.save(output, format="PNG")
         return output.getvalue()
     finally:
         pdf.close()
@@ -89,6 +115,9 @@ def main() -> int:
             result = json.dumps([asdict(chunk) for chunk in chunk_pages(pages)]).encode()
         elif operation == "preview":
             result = render_preview(data, int(args[0]))
+        elif operation == "highlight":
+            quote, data = data.split(b"\n", 1)
+            result = render_preview(data, int(args[0]), json.loads(quote))
         else:
             return 2
     except Exception:

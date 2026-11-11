@@ -1,6 +1,6 @@
 """Persistent data for Sourced workspaces, sessions, documents and ingestion."""
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
@@ -101,3 +101,14 @@ class PagePreview(Base):
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
     page: Mapped[int] = mapped_column(primary_key=True)
     png: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class UsageDaily(Base):
+    __tablename__ = "usage_daily"
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[date] = mapped_column(primary_key=True)
+    channel: Mapped[str] = mapped_column(String(32), primary_key=True)
+    questions: Mapped[int]
+    answered: Mapped[int]
+    not_found: Mapped[int]
+    blocked: Mapped[int]
