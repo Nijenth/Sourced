@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     CheckConstraint, Computed, DateTime, ForeignKey, ForeignKeyConstraint, Index,
-    LargeBinary, String, Text, UniqueConstraint, func,
+    LargeBinary, String, Text, UniqueConstraint, false, func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -127,6 +127,7 @@ class Widget(Base):
     allowed_origins: Mapped[list[str]] = mapped_column(ARRAY(Text))
     provider: Mapped[str] = mapped_column(String(32))
     judge_enabled: Mapped[bool]
+    hosted_page_enabled: Mapped[bool] = mapped_column(server_default=false())
     title: Mapped[str] = mapped_column(String(100))
     greeting: Mapped[str] = mapped_column(Text)
     brand_color: Mapped[str] = mapped_column(String(7))

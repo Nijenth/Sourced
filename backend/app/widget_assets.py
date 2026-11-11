@@ -2,33 +2,45 @@
 
 import base64
 import hashlib
+import json
 from functools import lru_cache
 from html import escape
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
 
-from .channels import public_settings
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 
 router = APIRouter(include_in_schema=False)
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = "1.0.0"
-ASSET_PREFIX = f"/widget-assets/{VERSION}"
+DIST = ROOT / "widget" / "dist"
+RELEASES = json.loads((DIST / "releases.json").read_text(encoding="utf-8"))
+LATEST_VERSION = max(RELEASES, key=lambda version: tuple(map(int, version.split("."))))
+ASSET_PREFIX = f"/widget-assets/{LATEST_VERSION}"
+ASSET_TYPES = {"widget.js": "application/javascript", "widget.css": "text/css"}
 
 
 @lru_cache
-def asset(name: str) -> bytes:
-    return (ROOT / "widget" / name).read_bytes()
+def asset(version: str, name: str) -> bytes:
+    expected = RELEASES.get(version, {}).get(name)
+    if expected is None or name not in ASSET_TYPES:
+        raise HTTPException(404)
+    try:
+        data = (DIST / version / name).read_bytes()
+    except OSError:
+        raise HTTPException(503, "Widget release assets are unavailable.") from None
+    checksum = base64.b64encode(hashlib.sha384(data).digest()).decode()
+    if f"sha384-{checksum}" != expected:
+        raise HTTPException(503, "Widget release assets are unavailable.")
+    return data
 
 
-def embed_details(origin: str | None, site_key: str):
+def embed_details(origin: str | None, site_key: str, hosted_enabled: bool = False):
     if not origin:
         return {"script_url": None, "integrity": None, "hosted_url": None}
-    checksum = base64.b64encode(hashlib.sha384(asset("widget.js")).digest()).decode()
     return {
         "script_url": f"{origin}{ASSET_PREFIX}/widget.js",
-        "integrity": f"sha384-{checksum}",
-        "hosted_url": f"{origin}/c/{site_key}",
+        "integrity": RELEASES[LATEST_VERSION]["widget.js"],
+        "hosted_url": f"{origin}/c/{site_key}" if hosted_enabled else None,
     }
 
 
@@ -41,12 +53,9 @@ def script_tag(origin: str, site_key: str, hosted: bool = False) -> str:
     )
 
 
-@router.get(ASSET_PREFIX + "/{name}")
-def widget_asset(name: str) -> Response:
-    types = {"widget.js": "application/javascript", "widget.css": "text/css"}
-    if name not in types:
-        raise HTTPException(404)
-    return Response(asset(name), media_type=types[name], headers={
+@router.get("/widget-assets/{version}/{name}")
+def widget_asset(version: str, name: str) -> Response:
+    return Response(asset(version, name), media_type=ASSET_TYPES[name], headers={
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "public, max-age=31536000, immutable",
         "X-Content-Type-Options": "nosniff",

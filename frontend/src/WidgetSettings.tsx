@@ -11,6 +11,7 @@ export interface WidgetFields {
   document_ids: string[]
   provider: string
   judge_enabled: boolean
+  hosted_page_enabled: boolean
   title: string
   greeting: string
   brand_color: string
@@ -30,17 +31,18 @@ const palette = [
 ]
 
 function defaults(providers: Provider[]): WidgetFields {
+  const provider = providers.find((item) => item.ready)?.name ?? ''
   return {
     name: 'Website widget', title: 'Ask the handbook', greeting: 'Hi! What would you like to know?',
     access_mode: 'public', brand_color: '#1F5C46', fallback_text: 'Please contact our team for more help.',
-    allowed_origins: [], document_ids: [], provider: providers.find((provider) => provider.ready)?.name ?? '',
-    judge_enabled: false,
+    allowed_origins: [], document_ids: [], provider,
+    judge_enabled: !!provider && provider !== 'offline', hosted_page_enabled: false,
   }
 }
 
 function fields(widget: WidgetRecord): WidgetFields {
-  const { name, access_mode, allowed_origins, document_ids, provider, judge_enabled, title, greeting, brand_color, fallback_text } = widget
-  return { name, access_mode, allowed_origins, document_ids, provider, judge_enabled, title, greeting, brand_color, fallback_text }
+  const { name, access_mode, allowed_origins, document_ids, provider, judge_enabled, hosted_page_enabled, title, greeting, brand_color, fallback_text } = widget
+  return { name, access_mode, allowed_origins, document_ids, provider, judge_enabled, hosted_page_enabled, title, greeting, brand_color, fallback_text }
 }
 
 function embedCode(widget: WidgetRecord | null) {
@@ -171,6 +173,11 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
               <span className="badge pending">Coming soon</span>
             </label>
           </fieldset>
+          <label className="widget-option">
+            <input type="checkbox" role="switch" checked={draft.hosted_page_enabled}
+              onChange={(event) => change('hosted_page_enabled', event.target.checked)} />
+            <span><strong>Allow a hosted chat link (for apps and direct links)</strong><small>Anyone with the link can ask about the selected documents.</small></span>
+          </label>
           <div className="widget-settings-stack compact">
             <strong className="widget-label">Websites allowed to show it</strong>
             {draft.allowed_origins.length > 0 && <ul className="widget-origins">
@@ -209,7 +216,9 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
             {providers.map((provider) => <label className={'widget-option model-option' + (draft.provider === provider.name ? ' active' : '')} key={provider.name}>
               <input type="radio" name="widget-provider" disabled={!provider.ready} checked={draft.provider === provider.name}
                 onChange={() => setDraft((current) => ({
-                  ...current, provider: provider.name, judge_enabled: provider.name === 'offline' ? false : current.judge_enabled,
+                  ...current,
+                  provider: provider.name,
+                  judge_enabled: provider.name !== 'offline' && (current.judge_enabled || (!widget && current.provider === 'offline')),
                 }))} />
               <span>{provider.label}</span><span className={'badge ' + (provider.ready ? 'success' : 'pending')}>
                 {provider.ready ? 'Ready' : 'Unavailable'}

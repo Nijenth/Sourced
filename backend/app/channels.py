@@ -19,6 +19,9 @@ from .db import Db
 from .db.models import QuestionLimit
 from .settings import positive_int
 
+Network = ipaddress.IPv4Network | ipaddress.IPv6Network
+Address = ipaddress.IPv4Address | ipaddress.IPv6Address
+
 
 def canonical_origin(value: str) -> str:
     if not value.isascii() or any(c.isspace() or ord(c) < 32 or c in "\\%?#" for c in value):
@@ -45,6 +48,7 @@ class ChannelSettings:
     workspace_daily: int
     widget_minute: int
     ip_minute: int
+    trusted_proxies: tuple[Network, ...]
 
     @classmethod
     def from_env(cls):
@@ -55,11 +59,19 @@ class ChannelSettings:
         secret = environ.get("SOURCED_PREVIEW_SECRET", "").encode()
         if secret and len(secret) < 32:
             raise ValueError("SOURCED_PREVIEW_SECRET must be at least 32 bytes.")
+        try:
+            proxies = tuple(
+                ipaddress.ip_network(item.strip())
+                for item in environ.get("SOURCED_TRUSTED_PROXIES", "").split(",") if item.strip()
+            )
+        except ValueError:
+            raise ValueError("SOURCED_TRUSTED_PROXIES must contain IP addresses or CIDR networks.") from None
         return cls(
             origin, secret,
             positive_int("SOURCED_WORKSPACE_QUESTIONS_PER_DAY", 300),
             positive_int("SOURCED_WIDGET_REQUESTS_PER_MINUTE", 20),
             positive_int("SOURCED_IP_REQUESTS_PER_MINUTE", 10),
+            proxies,
         )
 
 
@@ -70,11 +82,43 @@ def public_settings(request: Request) -> ChannelSettings:
     return settings
 
 
+def _address(value: str) -> Address:
+    if "%" in value:
+        raise ValueError("Scoped IP address")
+    return ipaddress.ip_address(value)
+
+
+def _trusted(address: Address, networks: tuple[Network, ...]) -> bool:
+    mapped = address.ipv4_mapped if isinstance(address, ipaddress.IPv6Address) else None
+    return any(address in network or (mapped is not None and mapped in network) for network in networks)
+
+
 def client_ip(request: Request) -> str:
+    """Return the client identity shared by rate limits and signed previews."""
     try:
-        return ipaddress.ip_address(request.client.host if request.client else "").compressed
+        peer = _address(request.client.host if request.client else "")
     except ValueError:
         raise HTTPException(503, "Could not verify the network address.") from None
+
+    address = peer
+    proxies = request.state.channels.trusted_proxies
+    if _trusted(peer, proxies):
+        forwarded = ",".join(request.headers.getlist("x-forwarded-for"))
+        for value in reversed(forwarded.split(",")):
+            try:
+                hop = _address(value.strip())
+            except ValueError:
+                # An ambiguous trusted suffix cannot establish a different client.
+                break
+            if not _trusted(hop, proxies):
+                address = hop
+                break
+
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped is not None:
+            return address.ipv4_mapped.compressed
+        return ipaddress.ip_network((address, 64), strict=False).with_prefixlen
+    return address.compressed
 
 
 def reserve_question(db: Db, settings: ChannelSettings, workspace_id: UUID, widget_id: UUID | None = None, ip: str = ""):

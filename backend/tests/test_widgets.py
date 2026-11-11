@@ -48,16 +48,18 @@ def public_env(sessions, monkeypatch):
     monkeypatch.setenv("SOURCED_WIDGET_REQUESTS_PER_MINUTE", "100")
     monkeypatch.setenv("SOURCED_IP_REQUESTS_PER_MINUTE", "100")
     monkeypatch.setenv("SOURCED_WORKSPACE_QUESTIONS_PER_DAY", "100")
+    monkeypatch.delenv("SOURCED_TRUSTED_PROXIES", raising=False)
 
 
 def client(ip="192.0.2.10"):
     return TestClient(app, base_url=HOSTED, client=(ip, 1000))
 
 
-def create_widget(browser, ids=()):
+def create_widget(browser, ids=(), **settings):
     response = browser.post(API + "/widgets", headers=csrf(browser), json={
         "name": "People help", "title": "Ask the handbook", "provider": "offline",
         "allowed_origins": [ORIGIN], "document_ids": [str(id) for id in ids], "fallback_text": FALLBACK,
+        **settings,
     })
     assert response.status_code == 201, response.text
     return response.json()
@@ -115,7 +117,7 @@ def test_public_chat_cors_document_scope_and_signed_previews(public_env, session
         queue(admin, make_pdf(BETA_TEXT))
         for _ in range(2):
             assert process_one(sessions, DocumentLimits.from_env(), HashingEmbedder())
-        widget = create_widget(admin, [visible])
+        widget = create_widget(admin, [visible], hosted_page_enabled=True)
         key = widget["site_key"]
         config_url = PUBLIC + f"/widgets/{key}/config"
         config = visitor.get(config_url, headers={"Origin": ORIGIN})
@@ -170,17 +172,87 @@ def test_public_chat_cors_document_scope_and_signed_previews(public_env, session
         assert [(row["channel_label"], row["questions"], row["answered"], row["blocked"]) for row in usage] == [("People help", 3, 1, 1)]
 
 
+def test_hosted_page_and_sourced_origin_require_per_widget_opt_in(public_env):
+    with client() as owner, client("192.0.2.11") as visitor:
+        signup(owner, "alpha")
+        widget = create_widget(owner, allowed_origins=[ORIGIN, HOSTED])
+        key = widget["site_key"]
+        path = "/c/" + key
+        settings_path = API + "/widgets/" + widget["id"]
+        preflight_headers = {
+            "Origin": HOSTED, "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,x-sourced-key",
+        }
+        assert widget["hosted_page_enabled"] is False and widget["hosted_url"] is None
+        assert visitor.get(path).status_code == 404
+        denied = ask_widget(visitor, key, origin=HOSTED)
+        assert denied.status_code == 403 and "access-control-allow-origin" not in denied.headers
+        assert visitor.options(PUBLIC + "/chat", params={"site_key": key}, headers=preflight_headers).status_code == 403
+        assert ask_widget(visitor, key).status_code == 200
+
+        enabled = owner.patch(settings_path, headers=csrf(owner), json={"hosted_page_enabled": True})
+        assert enabled.json()["hosted_url"] == HOSTED + path
+        assert visitor.get(path).status_code == 200
+        assert ask_widget(visitor, key, origin=HOSTED).status_code == 200
+        assert visitor.options(PUBLIC + "/chat", params={"site_key": key}, headers=preflight_headers).status_code == 204
+        assert owner.patch(settings_path, headers=csrf(owner), json={"hosted_page_enabled": False}).json()["hosted_url"] is None
+        assert visitor.get(path).status_code == 404
+        assert ask_widget(visitor, key, origin=HOSTED).status_code == 403
+
+
+def test_new_widgets_default_accuracy_check_based_on_provider(public_env, monkeypatch):
+    with client() as owner:
+        signup(owner, "alpha")
+        assert create_widget(owner)["judge_enabled"] is False
+
+    monkeypatch.delenv("RAG_OFFLINE_MODE", raising=False)
+    monkeypatch.setenv("OLLAMA_MODEL", "fixture-model")
+    with client() as owner:
+        signup(owner, "beta")
+        widget = create_widget(owner, provider="ollama")
+        assert widget["judge_enabled"] is True
+        disabled = create_widget(owner, provider="ollama", judge_enabled=False)
+        assert disabled["judge_enabled"] is False
+        edited = owner.patch(API + "/widgets/" + disabled["id"], headers=csrf(owner), json={"title": "Help"})
+        assert edited.json()["judge_enabled"] is False
+
+
+class FixedClock(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return datetime(2026, 11, 11, 12, 0, 15, tzinfo=timezone.utc)
+
+
+def test_forwarded_ipv6_bucket_is_shared_by_limits_and_previews(public_env, sessions, monkeypatch):
+    monkeypatch.setenv("SOURCED_TRUSTED_PROXIES", "192.0.2.11, 10.2.0.0/24")
+    monkeypatch.setenv("SOURCED_IP_REQUESTS_PER_MINUTE", "1")
+    monkeypatch.setattr(channels, "datetime", FixedClock)
+    with client() as owner, client("192.0.2.11") as proxy:
+        signup(owner, "alpha")
+        doc = queue(owner, make_pdf(ALPHA_TEXT))
+        assert process_one(sessions, DocumentLimits.from_env(), HashingEmbedder())
+        key = create_widget(owner, [doc])["site_key"]
+
+        def forwarded(address):
+            return {"X-Forwarded-For": f"203.0.113.5, {address}, 10.2.0.1"}
+
+        initial = ask_widget(proxy, key, **forwarded("2001:db8:44:2::a"))
+        assert initial.status_code == 200
+        preview = initial.json()["citations"][0]["preview_url"]
+        same_bucket = forwarded("2001:db8:44:2::b")
+        different_bucket = forwarded("2001:db8:44:3::b")
+        assert ask_widget(proxy, key, **same_bucket).status_code == 429
+        assert ask_widget(proxy, key, **different_bucket).status_code == 200
+        assert proxy.get(preview, headers={"Origin": ORIGIN, **same_bucket}).status_code == 200
+        assert proxy.get(preview, headers={"Origin": ORIGIN, **different_bucket}).status_code == 404
+
+
 @pytest.mark.parametrize(("setting", "different_widget", "different_ip"), [
     ("SOURCED_WIDGET_REQUESTS_PER_MINUTE", False, True),
     ("SOURCED_IP_REQUESTS_PER_MINUTE", True, False),
     ("SOURCED_WORKSPACE_QUESTIONS_PER_DAY", True, True),
 ])
 def test_widget_ip_and_workspace_limits(public_env, monkeypatch, setting, different_widget, different_ip):
-    class FixedClock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return datetime(2026, 11, 11, 12, 0, 15, tzinfo=timezone.utc)
-
     monkeypatch.setattr(channels, "datetime", FixedClock)
     monkeypatch.setenv(setting, "1")
     with client() as admin, client("192.0.2.12") as other:

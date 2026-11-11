@@ -54,11 +54,17 @@ def public_widget(db: Db, site_key: str, lock: bool = False) -> Widget:
     return widget
 
 
+def origin_is_allowed(origin: str, widget: Widget, sourced_origin: str | None) -> bool:
+    if origin == sourced_origin:
+        return widget.hosted_page_enabled
+    return origin in widget.allowed_origins
+
+
 def allowed_origin(request: Request, widget: Widget, required: bool = True) -> str | None:
     origin = request.headers.get("origin")
     if origin is None and not required:
         return None
-    if origin is None or origin not in (*widget.allowed_origins, request.state.channels.public_origin):
+    if origin is None or not origin_is_allowed(origin, widget, request.state.channels.public_origin):
         raise HTTPException(403, "This website is not allowed to use the widget.")
     return origin
 
@@ -175,7 +181,7 @@ def preview(signed_id: str, request: Request, db: Db) -> Response:
     widget = public_widget(db, site_key, lock=True)
     origin = request.headers.get("origin")
     if (
-        granted_origin not in (*widget.allowed_origins, settings.public_origin)
+        not origin_is_allowed(granted_origin, widget, settings.public_origin)
         or (origin is not None and origin != granted_origin)
         or document_id not in document_ids(db, widget)
     ):
@@ -186,8 +192,9 @@ def preview(signed_id: str, request: Request, db: Db) -> Response:
 
 @pages.get("/c/{site_key}")
 def hosted(site_key: str, request: Request, db: Db) -> HTMLResponse:
+    if not public_widget(db, site_key).hosted_page_enabled:
+        raise HTTPException(404, "Widget not found.")
     settings = public_settings(request)
-    public_widget(db, site_key)
     tag = script_tag(settings.public_origin, site_key, hosted=True)
     return HTMLResponse(
         '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'

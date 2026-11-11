@@ -5,7 +5,7 @@ Run these commands from the repository root with Python 3.12. Set `SOURCED_DATAB
 ```sh
 python -m pip install -r backend/requirements.txt
 python -m alembic -c backend/alembic.ini upgrade head
-python -m uvicorn backend.app.main:app --ssl-keyfile path/to/key.pem --ssl-certfile path/to/cert.pem
+python -m uvicorn backend.app.main:app --no-proxy-headers --ssl-keyfile path/to/key.pem --ssl-certfile path/to/cert.pem
 ```
 
 Start the worker in a separate shell with the same database URL and embedding settings.
@@ -44,9 +44,11 @@ Run the latest migrations and set `SOURCED_PUBLIC_ORIGIN` to the HTTPS origin th
 
 The admin `/api/v1/widgets` routes use the workspace session and require CSRF on writes. Public site keys are safe to embed. A rotated site key invalidates the previous snippets, hosted links, and outstanding preview grants. If an administrator requests secret-key rotation via `POST /api/v1/widgets/{id}/rotate-keys`, the `sk_` value appears once in that response and is stored as a digest. Keep it on the client’s server. Signed-in chat and token issuance are planned for M5.
 
-Public chat accepts the key in `X-Sourced-Key` and checks the exact `Origin`. Cross-origin browsers also put the same public key in the `site_key` query parameter so the preflight can look up the widget before the key header is sent. The hosted chat origin is allowed for its own pages. Origin checks control browser access. Direct callers can forge an Origin header, so treat every attached document as public.
+Public chat accepts the key in `X-Sourced-Key` and checks the exact `Origin`. Cross-origin browsers also put the same public key in the `site_key` query parameter so the preflight can look up the widget before the key header is sent. The Sourced origin and hosted link require per-widget opt-in. Origin checks control browser access. Direct callers can forge an Origin header, so treat every attached document as public.
 
-Public questions count against `SOURCED_WIDGET_REQUESTS_PER_MINUTE` and `SOURCED_IP_REQUESTS_PER_MINUTE`. `SOURCED_WORKSPACE_QUESTIONS_PER_DAY` counts admitted admin and public questions together and resets at midnight UTC. The defaults are 20 per widget per minute, 10 per IP per minute, and 300 per workspace per day. Limits use the connection address reported by the ASGI server. When running the API directly, use `--no-proxy-headers`. Behind a proxy, configure Uvicorn to trust forwarding headers only from that proxy and have it replace incoming forwarding headers.
+Public questions count against `SOURCED_WIDGET_REQUESTS_PER_MINUTE` and `SOURCED_IP_REQUESTS_PER_MINUTE`. `SOURCED_WORKSPACE_QUESTIONS_PER_DAY` counts admitted admin and public questions together and resets at midnight UTC. The defaults are 20 per widget per minute, 10 per IP per minute, and 300 per workspace per day.
+
+Run Uvicorn with `--no-proxy-headers` so Sourced receives the direct connection address. Behind a proxy, list its IP or CIDR in the comma-separated `SOURCED_TRUSTED_PROXIES` setting. Each trusted proxy must append the address it received the request from. Sourced walks `X-Forwarded-For` from right to left past trusted proxies and uses the first untrusted IP. The default trust list is empty. IPv6 clients share a /64 identity for rate limits and previews.
 
 Cited-page previews expire after ten minutes. The grant binds the current site key, the citation’s page, and the requesting IP and origin. Detaching or deleting the document also invalidates its previews. The public routes ignore session cookies.
 

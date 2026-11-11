@@ -31,6 +31,7 @@ class WidgetFields(BaseModel):
     document_ids: list[UUID] = Field(default_factory=list, max_length=100)
     provider: Annotated[str, StringConstraints(min_length=1, max_length=32)] | None = None
     judge_enabled: bool = False
+    hosted_page_enabled: bool = False
     title: Label = "Ask the handbook"
     greeting: Copy = "Hi! What would you like to know?"
     brand_color: str = Field(default="#1F5C46", pattern=r"^#[a-fA-F0-9]{6}$")
@@ -105,7 +106,9 @@ def settings_response(db: Db, request: Request, widget: Widget) -> WidgetSetting
     return WidgetSettings(
         **{field: getattr(widget, field) for field in WidgetFields.model_fields if field != "document_ids"},
         document_ids=document_ids(db, widget), id=widget.id, site_key=widget.site_key, created_at=widget.created_at,
-        **embed_details(channels.public_origin if channels.preview_secret else None, widget.site_key),
+        **embed_details(
+            channels.public_origin if channels.preview_secret else None, widget.site_key, widget.hosted_page_enabled,
+        ),
     )
 
 
@@ -119,7 +122,9 @@ def list_widgets(db: Db, request: Request, member: CurrentMember) -> list[Widget
 def create_widget(body: WidgetFields, db: Db, request: Request, member: VerifiedMember) -> WidgetSettings:
     fields = body.model_dump(exclude={"document_ids", "provider"})
     provider = resolve_provider(body.provider)
-    if provider == "offline" and body.judge_enabled:
+    if "judge_enabled" not in body.model_fields_set:
+        fields["judge_enabled"] = provider != "offline"
+    if provider == "offline" and fields["judge_enabled"]:
         raise HTTPException(422, "Accuracy checking requires an AI answer model.")
     widget = Widget(workspace_id=member.workspace_id, site_key=new_site_key(), provider=provider, **fields)
     db.add(widget)
