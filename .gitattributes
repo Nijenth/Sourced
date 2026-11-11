@@ -3,3 +3,6 @@
 *.png binary
 widget/dist/** -text
 widget/dist/releases.json text eol=lf
+# Shell scripts and Docker files run on Linux, even when checked out on Windows
+*.sh text eol=lf
+Dockerfile text eol=lf

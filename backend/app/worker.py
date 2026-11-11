@@ -3,6 +3,7 @@
 import argparse
 import logging
 import math
+import threading
 import time
 from dataclasses import dataclass
 from datetime import timedelta
@@ -201,6 +202,59 @@ def cleanup(sessions: sessionmaker) -> tuple[int, int]:
     return logins, limits
 
 
+def run(
+    sessions: sessionmaker, limits: DocumentLimits, embedder: Embedder, stop: threading.Event, *,
+    once: bool = False, idle_seconds: float = 2.0,
+) -> None:
+    """Process jobs until `stop` is set (or after one job with `once`), cleaning up periodically."""
+    retry_seconds = positive_int("SOURCED_INGEST_RETRY_SECONDS", DEFAULT_RETRY_SECONDS)
+    cleanup_seconds = positive_int("SOURCED_CLEANUP_SECONDS", CLEANUP_SECONDS)
+    next_cleanup = 0.0
+    while not stop.is_set():
+        if time.monotonic() >= next_cleanup:
+            try:
+                removed = cleanup(sessions)
+                logger.info("Cleanup removed %d expired sessions and %d rate-limit windows.", *removed)
+            except Exception as exc:
+                logger.error("Cleanup failed (%s).", type(exc).__name__)
+            next_cleanup = time.monotonic() + cleanup_seconds
+        try:
+            processed = process_one(sessions, limits, embedder, retry_seconds=retry_seconds)
+        except Exception as exc:
+            # Claims survive crashes and database interruptions until their leases expire.
+            logger.error("Ingestion interrupted (%s).", type(exc).__name__)
+            if once:
+                raise
+            processed = False
+        if once:
+            return
+        if not processed:
+            stop.wait(idle_seconds)
+
+
+class EmbeddedWorker:
+    """Run the worker loop on a background thread inside the API process (single-container hosting)."""
+
+    def __init__(self, sessions: sessionmaker):
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, args=(sessions,), name="sourced-worker", daemon=True,
+        )
+
+    def _run(self, sessions: sessionmaker) -> None:
+        try:
+            run(sessions, DocumentLimits.from_env(), make_embedder(), self._stop)
+        except Exception as exc:
+            logger.error("The embedded worker stopped (%s).", type(exc).__name__)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self, timeout: float = 10.0) -> None:
+        self._stop.set()
+        self._thread.join(timeout)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Sourced ingestion worker.")
     parser.add_argument("--once", action="store_true", help="Process at most one job and exit.")
@@ -209,33 +263,13 @@ def main() -> None:
     engine = database_engine()
     try:
         sessions = sessionmaker(engine)
-        limits = DocumentLimits.from_env()
-        embedder = make_embedder()
-        retry_seconds = positive_int("SOURCED_INGEST_RETRY_SECONDS", DEFAULT_RETRY_SECONDS)
-        cleanup_seconds = positive_int("SOURCED_CLEANUP_SECONDS", CLEANUP_SECONDS)
-        next_cleanup = 0.0
-        while True:
-            if time.monotonic() >= next_cleanup:
-                try:
-                    removed = cleanup(sessions)
-                    logger.info("Cleanup removed %d expired sessions and %d rate-limit windows.", *removed)
-                except Exception as exc:
-                    logger.error("Cleanup failed (%s).", type(exc).__name__)
-                next_cleanup = time.monotonic() + cleanup_seconds
-            try:
-                processed = process_one(sessions, limits, embedder, retry_seconds=retry_seconds)
-            except Exception as exc:
-                # Claims survive crashes and database interruptions until their leases expire.
-                logger.error("Ingestion interrupted (%s).", type(exc).__name__)
-                if args.once:
-                    raise SystemExit(1) from None
-                processed = False
-            if args.once:
-                return
-            if not processed:
-                time.sleep(2)
+        run(sessions, DocumentLimits.from_env(), make_embedder(), threading.Event(), once=args.once)
     except KeyboardInterrupt:
         return
+    except Exception:
+        if args.once:
+            raise SystemExit(1) from None
+        raise
     finally:
         engine.dispose()
 

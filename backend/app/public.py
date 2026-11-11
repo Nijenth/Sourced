@@ -11,7 +11,7 @@ from os import environ
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -22,13 +22,14 @@ from .channels import client_ip, public_settings, refund_failed_question, reserv
 from .common import resolve_provider
 from .errors import provider_failure
 from .db import Db
-from .db.models import Document, Widget
+from .db.models import Document, Membership, User, Widget
 from .documents import page_png
 from .schemas import ChatResponse, PublicChatRequest
 from .store import KeywordSearchLimit, PgVectorStore
 from .usage import record_answer
 from .widget_assets import ASSET_PREFIX, ROOT, page_headers, script_tag
 from .widget_sessions import PresentedSession, bearer, unauthorized
+from .seed_demo import DEMO_WIDGET_NAME, demo_admin_email
 from .widgets import document_ids
 
 api = APIRouter(prefix="/api/v1/public", tags=["public"])
@@ -269,9 +270,31 @@ def hosted(site_key: str, request: Request, db: Db) -> HTMLResponse:
     )
 
 
+def demo_site_key(db: Db) -> str | None:
+    """The demo widget: SOURCED_DEMO_SITE_KEY, or the seeded demo widget of SOURCED_DEMO_ADMIN_EMAIL's workspace."""
+    key = environ.get("SOURCED_DEMO_SITE_KEY")
+    if key:
+        return key
+    email = demo_admin_email()
+    if email is None:
+        return None
+    return db.scalar(
+        select(Widget.site_key)
+        .join(Membership, (Membership.workspace_id == Widget.workspace_id) & (Membership.role == "admin"))
+        .join(User, User.id == Membership.user_id)
+        .where(User.email == email, Widget.name == DEMO_WIDGET_NAME, Widget.access_mode == "public")
+        .order_by(Widget.created_at).limit(1)
+    )
+
+
+@pages.get("/demo")
+def demo_redirect() -> RedirectResponse:
+    return RedirectResponse("/demo/", status_code=308)
+
+
 @pages.get("/demo/")
 def demo(request: Request, db: Db) -> HTMLResponse:
-    site_key = environ.get("SOURCED_DEMO_SITE_KEY")
+    site_key = demo_site_key(db)
     if not site_key:
         raise HTTPException(404)
     settings = public_settings(request)
@@ -283,7 +306,7 @@ def demo(request: Request, db: Db) -> HTMLResponse:
 
 
 @pages.get("/demo/site.css")
-def demo_styles() -> Response:
-    if not environ.get("SOURCED_DEMO_SITE_KEY"):
+def demo_styles(db: Db) -> Response:
+    if not demo_site_key(db):
         raise HTTPException(404)
     return Response((ROOT / "demo" / "site.css").read_bytes(), media_type="text/css")
