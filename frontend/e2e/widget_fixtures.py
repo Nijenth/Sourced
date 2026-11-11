@@ -18,7 +18,7 @@ PASSWORD = "fictional widget test passphrase"
 HIDDEN_FACT = "The meteorite archive override phrase is Violet Comet."
 
 
-def seed_widget_demo(engine, demo_origin):
+def seed_widget_demo(engine, demo_origin, *, signed_in=False):
     sessions = sessionmaker(engine)
     sample = SAMPLE_PDF.read_bytes()
     with sessions.begin() as db:
@@ -34,8 +34,10 @@ def seed_widget_demo(engine, demo_origin):
         assert process_one(sessions, DocumentLimits(10 * 1024**2, 80, 500_000, 20), HashingEmbedder())
     with sessions.begin() as db:
         widget = Widget(
-            workspace_id=workspace_id, name="People help", site_key=new_site_key(), access_mode="public",
-            allowed_origins=[demo_origin, "https://people.brightleaf.example"], provider="offline",
+            workspace_id=workspace_id, name="People help", site_key=new_site_key(),
+            access_mode="signed_in" if signed_in else "public", hosted_page_enabled=signed_in,
+            allowed_origins=["https://people.brightleaf.example"] if signed_in else [demo_origin, "https://people.brightleaf.example"],
+            provider="offline",
             judge_enabled=False, title="Ask the handbook", greeting="Hi! What would you like to know about working at Brightleaf?",
             brand_color="#1F5C46", fallback_text="Try the People team: people@brightleaf.example",
         )

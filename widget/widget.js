@@ -5,8 +5,15 @@
   const key = script?.dataset.siteKey
   if (!key || !/^pk_[A-Za-z0-9_-]{32}$/.test(key)) return
   const asset = new URL(script.src)
-  const hosted = script.dataset.mode === 'hosted'
+  const hosted = script.dataset.mode === 'hosted' && location.origin === asset.origin && location.pathname === '/c/' + key
   const api = new URL('/api/v1/public/', asset)
+  const validSession = (value) => typeof value === 'string' && /^st_[A-Za-z0-9_-]{1,2048}\.[0-9a-f]{64}$/.test(value)
+  function fragmentToken() {
+    const token = new URLSearchParams(location.hash.slice(1)).get('token')
+    if (location.hash || location.search) window.history.replaceState(null, '', location.pathname)
+    return validSession(token) ? token : null
+  }
+  let sessionToken = hosted ? fragmentToken() : null
 
   function element(tag, className, text) {
     const node = document.createElement(tag)
@@ -47,6 +54,9 @@
     const response = await fetch(url, { ...options, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' })
     if (!response.ok) {
       if (response.status === 429) throw new Error('Too many questions. Please try again later.')
+      if (response.status === 401) {
+        throw Object.assign(new Error('Your chat session is unavailable or expired. Reopen chat from your site or app.'), { expired: true })
+      }
       throw new Error('Chat is unavailable. Please try again later.')
     }
     return response
@@ -114,6 +124,7 @@
     let config
     let pending = false
     let sourceSequence = 0
+    let sessionRevision = 0
     let objectUrl = ''
     const history = []
     const message = (text, kind = 'answer') => {
@@ -123,6 +134,27 @@
       return node
     }
     const loading = message('Loading chat…')
+    const canAsk = () => !!config && (config.access_mode === 'public' || !!sessionToken)
+    const updateSend = () => { send.disabled = !canAsk() || pending || !input.value.trim() }
+
+    function welcome() {
+      messages.replaceChildren()
+      if (!canAsk()) message('Sign in through your site or app to start chatting.')
+      else if (config.greeting) message(config.greeting)
+      updateSend()
+    }
+
+    function setSessionToken(token) {
+      if (token !== null && !validSession(token)) return
+      if (token === sessionToken || config?.access_mode === 'public') return
+      sessionToken = token
+      sessionRevision++
+      pending = false
+      history.length = 0
+      input.value = ''
+      if (source.open) source.close()
+      if (config) welcome()
+    }
 
     function toggle(open) {
       panel.hidden = !open
@@ -136,20 +168,41 @@
     panel.addEventListener('keydown', (event) => {
       if (!hosted && event.key === 'Escape' && !source.open && !event.defaultPrevented) toggle(false)
     })
-    input.addEventListener('input', () => { send.disabled = !config || pending || !input.value.trim() })
+    input.addEventListener('input', updateSend)
+    if (hosted) window.addEventListener('hashchange', () => {
+      const token = fragmentToken()
+      if (token) setSessionToken(token)
+    })
+    // Host pages receive the session setter. The hosted page takes tokens only from its URL fragment.
+    const detail = () => hosted ? { siteKey: key } : { siteKey: key, setSessionToken }
+    let announcing = false
+    function announce() {
+      if (hosted || announcing) return
+      announcing = true
+      try {
+        script.dispatchEvent(new CustomEvent('sourced:ready', { bubbles: true, detail: detail() }))
+      } finally {
+        announcing = false
+      }
+    }
+    function sessionExpired(revision) {
+      if (config?.access_mode !== 'signed_in' || revision !== sessionRevision) return
+      script.dispatchEvent(new CustomEvent('sourced:session-expired', { bubbles: true, detail: detail() }))
+    }
+    script.addEventListener('sourced:request-ready', announce)
+    announce()
 
     request(new URL('widgets/' + key + '/config', api)).then((response) => response.json()).then((value) => {
-      if (value.access_mode !== 'public') throw new Error('Chat is unavailable.')
+      if (value.access_mode !== 'public' && value.access_mode !== 'signed_in') throw new Error('Chat is unavailable.')
       config = value
       title.textContent = value.title
       brand(ui, value.brand_color)
-      loading.remove()
-      if (value.greeting) message(value.greeting)
-      send.disabled = !input.value.trim()
+      welcome()
     }).catch(() => { loading.textContent = 'Chat is unavailable on this website.' })
 
     function openSource(citation) {
       const sequence = ++sourceSequence
+      const revision = sessionRevision
       const info = element('div')
       info.append(
         element('p', 'eyebrow', 'Source ' + citation.number),
@@ -170,7 +223,8 @@
         status.textContent = 'Page preview unavailable.'
         return
       }
-      request(new URL(path, api)).then((response) => {
+      const headers = config.access_mode === 'signed_in' ? { Authorization: 'Bearer ' + sessionToken } : {}
+      request(new URL(path, api), { headers }).then((response) => {
         if (response.headers.get('content-type') !== 'image/png') throw new Error('Invalid preview.')
         return response.blob()
       }).then((blob) => {
@@ -180,13 +234,17 @@
         image.alt = 'Page ' + citation.page + ' preview'
         image.src = objectUrl
         status.replaceWith(image)
-      }).catch(() => { status.textContent = 'Page preview unavailable or expired.' })
+      }).catch((error) => {
+        status.textContent = 'Page preview unavailable or expired.'
+        if (error.expired) sessionExpired(revision)
+      })
     }
 
     source.addEventListener('close', () => {
       sourceSequence++
       if (objectUrl) URL.revokeObjectURL(objectUrl)
       objectUrl = ''
+      source.replaceChildren()
     })
 
     function showAnswer(answer) {
@@ -232,7 +290,8 @@
     form.addEventListener('submit', async (event) => {
       event.preventDefault()
       const question = input.value.trim()
-      if (!config || !question || pending) return
+      if (!canAsk() || !question || pending) return
+      const revision = sessionRevision
       pending = true
       send.disabled = true
       input.value = ''
@@ -242,11 +301,14 @@
       try {
         const chat = new URL('chat', api)
         chat.searchParams.set('site_key', key)
+        const credential = config.access_mode === 'signed_in'
+          ? { Authorization: 'Bearer ' + sessionToken } : { 'X-Sourced-Key': key }
         const response = await request(chat, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sourced-Key': key },
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...credential },
           body: JSON.stringify({ question, history: history.slice(-6) }),
         })
         const answer = await response.json()
+        if (revision !== sessionRevision) return
         searching.remove()
         showAnswer(answer)
         history.push(
@@ -255,12 +317,17 @@
         )
         if (history.length > 6) history.splice(0, history.length - 6)
       } catch (error) {
+        if (revision !== sessionRevision) return
         sent.remove()
         searching.textContent = error.message
         if (!input.value) input.value = question
+        // A listener may set a fresh token synchronously, which starts a new conversation.
+        if (error.expired) sessionExpired(revision)
       } finally {
-        pending = false
-        send.disabled = !input.value.trim()
+        if (revision === sessionRevision) {
+          pending = false
+          updateSend()
+        }
       }
     })
   }

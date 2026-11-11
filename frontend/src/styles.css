@@ -184,6 +184,8 @@ td time { color: var(--muted); white-space: nowrap; }
 .widget-snippet pre { flex: 1 1 320px; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; color: #b9e3a0; font-size: 12px; line-height: 1.55; }
 .widget-snippet button { min-height: 44px; padding: 0 12px; color: white; border: 1px solid #68707e; border-radius: 8px; background: transparent; font-size: 13px; }
 .widget-hosted-link { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; }
+.widget-secret { display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: var(--pending-bg); font-size: 13px; }
+.widget-secret code { overflow-wrap: anywhere; user-select: all; }
 .widget-palette { display: flex; flex-wrap: wrap; gap: 10px; }
 .widget-palette button { width: 44px; height: 44px; border-radius: 50%; border: 3px solid white; }
 .widget-palette button[aria-pressed="true"] { outline: 2px solid #14161a; }

@@ -11,11 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 from sqlalchemy import delete, select
 
 from .auth import CurrentMember, VerifiedMember
-from .channels import canonical_origin
+from .channels import canonical_origin, public_settings
 from .common import resolve_provider
 from .db import Db
 from .db.models import Document, Widget, WidgetDocument
 from .widget_assets import embed_details
+from .widget_sessions import SessionRequest, SessionResponse, accepts_secret, bearer, issue_session, unauthorized
 
 router = APIRouter(prefix="/widgets", tags=["widgets"])
 Label = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100, pattern=r"^[^\x00]+$")]
@@ -26,7 +27,7 @@ class WidgetFields(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: Label = "Website widget"
-    access_mode: Literal["public"] = "public"
+    access_mode: Literal["public", "signed_in"] = "public"
     allowed_origins: list[Annotated[str, StringConstraints(max_length=300)]] = Field(default_factory=list, max_length=25)
     document_ids: list[UUID] = Field(default_factory=list, max_length=100)
     provider: Annotated[str, StringConstraints(min_length=1, max_length=32)] | None = None
@@ -50,6 +51,7 @@ class WidgetSettings(WidgetFields):
     script_url: str | None
     integrity: str | None
     hosted_url: str | None
+    has_secret_key: bool
 
 
 class RotateKeys(BaseModel):
@@ -106,6 +108,7 @@ def settings_response(db: Db, request: Request, widget: Widget) -> WidgetSetting
     return WidgetSettings(
         **{field: getattr(widget, field) for field in WidgetFields.model_fields if field != "document_ids"},
         document_ids=document_ids(db, widget), id=widget.id, site_key=widget.site_key, created_at=widget.created_at,
+        has_secret_key=widget.secret_key_hash is not None,
         **embed_details(
             channels.public_origin if channels.preview_secret else None, widget.site_key, widget.hosted_page_enabled,
         ),
@@ -150,6 +153,8 @@ def update_widget(widget_id: UUID, body: WidgetFields, db: Db, request: Request,
         raise HTTPException(422, "Accuracy checking requires an AI answer model.")
     if "document_ids" in fields:
         assign_documents(db, widget, fields.pop("document_ids"))
+    if fields.get("access_mode", widget.access_mode) != widget.access_mode:
+        widget.access_version += 1
     for field, value in fields.items():
         setattr(widget, field, value)
     result = settings_response(db, request, widget)
@@ -178,3 +183,16 @@ def rotate_keys(widget_id: UUID, body: RotateKeys, db: Db, member: VerifiedMembe
     result = RotatedKeys(site_key=widget.site_key, secret_key=secret_key)
     db.commit()
     return result
+
+
+@router.post("/{widget_id}/session-tokens")
+def session_tokens(widget_id: UUID, body: SessionRequest, request: Request, response: Response, db: Db) -> SessionResponse:
+    token = bearer(request)
+    widget = db.scalar(select(Widget).where(Widget.id == widget_id).with_for_update(read=True))
+    if widget is None or not accepts_secret(widget, token):
+        raise unauthorized("A valid widget server secret key is required.")
+    if widget.access_mode != "signed_in":
+        raise HTTPException(403, "This widget does not use signed-in access.")
+    settings = public_settings(request)
+    response.headers["Cache-Control"] = "no-store"
+    return issue_session(settings.preview_secret, widget, body.user_ref)

@@ -26,3 +26,5 @@ python -m frontend.e2e.run_live
 ```
 
 The walkthrough uses a disposable pgvector database, a loopback API and worker, and the bundled fictional handbook. It covers sign-up, upload, asking a question, opening and closing a citation, usage, cancelling and confirming deletion, sign-out, and sign-in. Add `--screenshots` to capture the five pages under `frontend/screenshots/` with fictional review fixtures.
+
+Use `--widgets` for the public website widget walkthrough on the demo page and `--signed-in` for the signed-in hosted chat, session-token, token-refresh and access-log checks. `widget-events.spec.ts` needs no API: from `frontend/`, run `npx playwright test widget-events.spec.ts` to check the widget’s page events against the newest released `widget.js` with a stubbed API.
