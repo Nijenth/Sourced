@@ -33,6 +33,11 @@ def test_chat_sends_system_prompt_and_turns_thinking_off():
     assert payload["options"]["num_predict"] == 120
 
 
+def test_label_drops_the_quantisation_suffix():
+    assert OllamaChat("qwen3.6:35b-a3b-q4_K_M", transport=FakeOllama()).label == "Ollama (qwen3.6:35b-a3b, local)"
+    assert OllamaChat("llama3.2:3b-instruct-fp16", transport=FakeOllama()).label == "Ollama (llama3.2:3b-instruct, local)"
+
+
 def test_inline_think_blocks_are_removed():
     fake = FakeOllama(reply="<think>hmm</think>\n{\"found\": false}")
     assert OllamaChat("m", transport=fake).complete("s", [{"role": "user", "content": "q"}]) == '{"found": false}'

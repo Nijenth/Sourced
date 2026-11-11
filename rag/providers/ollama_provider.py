@@ -91,7 +91,8 @@ class OllamaChat:
         if think.lower() in ("", "auto", "default"):
             self._think = None  # let the model decide
         self.name = "ollama"
-        self.label = f"Ollama ({model}, local)"
+        short = re.sub(r"[-_](q\d\w*|fp16|fp32|bf16)$", "", model, flags=re.IGNORECASE)  # qwen3.6:35b-a3b-q4_K_M
+        self.label = f"Ollama ({short}, local)"
 
     def complete(self, system: str, messages: list[dict], max_tokens: int = 900) -> str:
         payload = {

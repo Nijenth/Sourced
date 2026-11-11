@@ -45,6 +45,18 @@ def test_supported_verdict_and_the_judge_sees_the_cited_passage():
     assert LEAVE in judge_chat.prompts[0] and "You get 24 days" in judge_chat.prompts[0]
 
 
+def test_judge_sees_every_retrieved_passage_and_records_its_name():
+    other = "Notice periods: Lead, Principal and Director roles give 8 weeks."
+    hits = [Hit(Chunk("c1", "handbook.pdf", 6, LEAVE), 1.0), Hit(Chunk("c2", "handbook.pdf", 4, other), 0.9)]
+    raw = json.dumps({"coverage": "full", "answer": "You get 24 days [1].",
+                      "citations": [{"source": 1, "quote": "Full-time employees get 24 days of paid annual leave"}]})
+    judge_chat = Scripted(_verdict("supported"))
+    j = Judge(judge_chat).check("q", build_answer(raw, hits, "q"))
+    assert other in judge_chat.prompts[0]  # uncited passage [2] is shown too, to catch false "not covered"
+    assert "[2] handbook.pdf, page 4" in judge_chat.prompts[0]
+    assert j.judge == "scripted"
+
+
 def test_unsupported_verdict_lists_the_claims():
     j = Judge(Scripted(_verdict("unsupported", ["4 weeks of notice"]))).check("q", _answer())
     assert j.verdict == "unsupported" and j.score == 0.0 and j.problems == ["4 weeks of notice"]

@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import io
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from rag.citations import INVALID_OUTPUT, UNVERIFIED, snippet  # noqa: E402
 from rag.config import Settings, load_settings  # noqa: E402
 from rag.documents import PdfError, chunk_pages, count_pages, file_hash, load_pdf  # noqa: E402
 from rag.pipeline import RAGPipeline  # noqa: E402
+from rag.incident import format_incident_draft, policy_note  # noqa: E402
 from rag.judge import Judge  # noqa: E402
 from rag.rerank import make_reranker  # noqa: E402
 from rag.providers import (  # noqa: E402
@@ -196,10 +198,7 @@ def index_uploads(files, embedder) -> tuple[VectorStore | None, dict[str, bytes]
 @st.dialog("Draft IT incident report")
 def draft_incident_report() -> None:
     st.caption("Use fictional details in this demo. The draft is for you to review and copy.")
-    st.caption(
-        "Brightleaf’s sample handbook (page 12) says to report a lost or stolen laptop or phone "
-        "to it@brightleaf.example within 24 hours."
-    )
+    st.caption(policy_note())
     with st.form("incident_report"):
         device = st.text_input("Affected device", placeholder="Laptop or phone", max_chars=100)
         when = st.text_input("When did you notice?", max_chars=120)
@@ -207,18 +206,11 @@ def draft_incident_report() -> None:
         submitted = st.form_submit_button("Create draft", type="primary")
 
     if submitted:
-        if not description.strip():
+        draft = format_incident_draft(device, when, description)
+        if draft is None:
             st.warning("Describe what happened to create a draft.")
             return
-        st.code(
-            "To: it@brightleaf.example\n"
-            "Subject: Lost or stolen device report\n\n"
-            f"Affected device: {device.strip()}\n"
-            f"When noticed: {when.strip()}\n\n"
-            f"What happened:\n{description.strip()}",
-            language=None,
-            wrap_lines=True,
-        )
+        st.code(draft, language=None, wrap_lines=True)
 
 
 def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
@@ -242,18 +234,21 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
             st.caption(f"Searched the closest passages ({pages}) and none of them answer this.")
         return
 
+    if msg.get("searched_for"):
+        st.caption(f"Searched for: “{md_escape(msg['searched_for'])}”")
     judgement = msg.get("judgement")
     if judgement:
         problems = "; ".join(md_escape(p) for p in judgement.get("problems", [])[:3])
         verdict = judgement.get("verdict")
+        by = f" ({md_escape(judgement['judge'])})" if judgement.get("judge") else ""
         if verdict == "supported":
-            st.caption("✓ Accuracy check: every claim matches the cited passages.")
+            st.caption(f"✓ Accuracy check{by}: every claim matches the passages.")
         elif verdict == "partial":
-            st.warning("Accuracy check: some details may not be fully supported by the sources." + (f" ({problems})" if problems else ""))
+            st.warning(f"Accuracy check{by}: some details may not be fully supported by the sources." + (f" ({problems})" if problems else ""))
         elif verdict == "unsupported":
-            st.error("Accuracy check: the cited passages don't support this answer." + (f" ({problems})" if problems else ""))
+            st.error(f"Accuracy check{by}: the passages don't support this answer." + (f" ({problems})" if problems else ""))
         else:
-            st.caption("The accuracy check couldn't run for this answer.")
+            st.caption(f"The accuracy check{by} couldn't run for this answer." + (f" {problems}" if problems else ""))
     if msg.get("partial"):
         st.caption("The documents only partly answer this. Check the sources below.")
     citations = msg.get("citations", [])
@@ -270,13 +265,23 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
                 st.image(render_page(file_hash(data), c["page"], data), width="stretch")
 
 
-def answer_to_message(answer) -> dict:
+def _same_question(a: str, b: str) -> bool:
+    simple = lambda s: " ".join(re.sub(r"[^\w\s]", " ", s.lower()).split())  # noqa: E731
+    return simple(a) == simple(b)
+
+
+def answer_to_message(answer, question: str = "") -> dict:
     return {
+        # Follow-ups are rewritten before searching; show the rewrite so it is never a silent change.
+        "searched_for": answer.search_query
+        if question and answer.search_query and not _same_question(question, answer.search_query)
+        else "",
         "role": "assistant",
         "content": answer.text,
         "found": answer.found,
         "partial": answer.partial,
-        "judgement": {"verdict": answer.judgement.verdict, "problems": answer.judgement.problems}
+        "judgement": {"verdict": answer.judgement.verdict, "problems": answer.judgement.problems,
+                      "judge": answer.judgement.judge}
         if answer.judgement
         else None,
         "status": answer.status,
@@ -458,7 +463,7 @@ if prompt:
         with st.chat_message("assistant"):
             with st.spinner("Searching the documents…"):
                 try:
-                    reply = answer_to_message(pipeline.ask(prompt, history))
+                    reply = answer_to_message(pipeline.ask(prompt, history), prompt)
                     ss.asked += 1
                 except ProviderError as exc:
                     reply = {"role": "assistant", "content": str(exc), "error": True}
