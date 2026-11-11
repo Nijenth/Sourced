@@ -22,11 +22,15 @@ Use HTTPS so clients send the Secure cookies. All routes below use the `/api/v1`
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Start, end, or inspect a 12-hour session. |
 | `POST /documents` | Send one PDF as multipart form field `file`. Returns `202` and the queued document ID. |
 | `GET /documents`, `GET /documents/{id}` | Read workspace document status and ingestion progress. |
+| `GET /documents/settings` | Read upload limits and the configured embedding provider label. |
 | `GET /documents/{id}/pages/{page}.png` | Read a PNG of a page in a ready document. Page numbers start at 1. |
+| `GET /documents/{id}/pdf` | Open the original PDF for a ready document in the workspace. |
+| `POST /documents/{id}/pages/{page}/highlight` | Render the page with a highlight when its text matches the supplied quote. |
 | `DELETE /documents/{id}` | Delete a document, its file, vectors, and cached previews. Repeated deletion returns `204`. |
 | `POST /chat` | Ask over the workspace's ready documents. Optionally pass `document_ids` to limit retrieval to a subset. |
+| `GET /usage` | Read counts of completed answers by UTC day and channel. The optional `days` parameter defaults to 30 and accepts 1–90. |
 
-Keep the session and CSRF cookies from signup or login. Send the value of `__Host-sourced_csrf` in the `X-CSRF-Token` header for upload, deletion, chat, and logout. Only the liveness endpoint and account creation and sign-in are available without a session.
+Keep the session and CSRF cookies from signup or login. Send the value of `__Host-sourced_csrf` in the `X-CSRF-Token` header for upload, deletion, highlighted previews, chat, and logout. Only the liveness endpoint and account creation and sign-in are available without a session. Usage stores counts only.
 
 PDFs are stored in Postgres under their document IDs. Defaults allow 10 MiB per PDF, 80 pages, and 500,000 extracted characters. The page count, extraction, and preview operations have a 20-second timeout per operation. Previews are capped at 1,400 pixels on their longest side. Configure the limits with `MAX_UPLOAD_MB`, `MAX_UPLOAD_PAGES`, `SOURCED_MAX_PDF_CHARS`, and `SOURCED_PDF_TIMEOUT_SECONDS`.
 

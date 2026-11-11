@@ -21,10 +21,12 @@ from .documents import router as documents_router
 from .schemas import ChatResponse, WorkspaceChatRequest
 from .settings import DocumentLimits
 from .store import KeywordSearchLimit, PgVectorStore
+from .usage import record_answer, router as usage_router
 
 admin = APIRouter(prefix="/api/v1")
 admin.include_router(auth_router)
 admin.include_router(documents_router)
+admin.include_router(usage_router)
 admin.add_api_route("/providers", providers, methods=["GET"], dependencies=[Depends(get_member)])
 
 
@@ -52,18 +54,19 @@ def chat(body: WorkspaceChatRequest, request: Request, db: Db, member: VerifiedM
             raise HTTPException(404, "Document not found.")
     provider = resolve_provider(body.provider)
     if db.scalar(owned.where(Document.status == "ready").limit(1)) is None:
-        return ChatResponse(status="not_found", text=NOT_FOUND_TEXT)
+        return record_answer(db, member.workspace_id, ChatResponse(status="not_found", text=NOT_FOUND_TEXT))
 
     # Release the authorization connection before the search opens its snapshot.
     db.rollback()
     try:
         store = PgVectorStore(request.state.sessions, make_embedder(), member.workspace_id, selected)
         history = [message.model_dump() for message in body.history]
-        return request.state.chat_service.ask(store, body.question, history, provider)
+        answer = request.state.chat_service.ask(store, body.question, history, provider)
     except KeywordSearchLimit as exc:
         raise HTTPException(422, str(exc)) from None
     except ProviderError:
         raise provider_failure() from None
+    return record_answer(db, member.workspace_id, answer)
 
 
 app = FastAPI(title="Sourced API", version="1.0.0", lifespan=lifespan)
