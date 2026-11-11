@@ -25,6 +25,9 @@ For each factual claim in the answer, decide whether the passages state it. Numb
 conditions and exceptions must match the passages exactly. Saying that the documents don't cover
 something is not a claim. Ignore the [1], [2] markers.
 
+Only check what the answer says. Do not mark it down for details it leaves out, or for gaps in the
+documents themselves: an incomplete but accurate answer is "supported".
+
 Reply with JSON only, in this shape:
 {"verdict": "supported" | "partial" | "unsupported", "unsupported_claims": ["short description", ...]}
 
