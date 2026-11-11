@@ -1,7 +1,6 @@
 """Claim and process durable Sourced ingestion jobs."""
 
 import argparse
-import json
 import logging
 import math
 import time
@@ -10,18 +9,20 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, delete, func, or_, select, update
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from rag.documents import Chunk
 from rag.providers import Embedder, ProviderError, make_embedder
 
 from .db import database_engine
 from .db.models import Document, DocumentChunk, DocumentFile
-from .pdf_tasks import PdfTaskError, run_pdf_task
+from .pdf_tasks import PdfTaskError, extract_chunks
 from .settings import DocumentLimits
 
 LEASE = timedelta(minutes=15)
 BATCH_SIZE = 64
+MAX_ATTEMPTS = 3
+RETRY_ERROR = "This document could not be indexed after three attempts. Try uploading it again."
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +33,7 @@ class Job:
     claim_id: UUID
     filename: str
     data: bytes
+    attempts: int
 
     def document_filter(self):
         return (
@@ -44,8 +46,8 @@ class Job:
 
 def claim_job(sessions: sessionmaker, embedding_model: str) -> Job | None:
     with sessions.begin() as db:
-        row = db.execute(
-            select(Document, DocumentFile.pdf)
+        eligible = (
+            select(Document)
             .join(DocumentFile, DocumentFile.document_id == Document.id)
             .where(or_(
                 Document.status == "queued",
@@ -55,17 +57,28 @@ def claim_job(sessions: sessionmaker, embedding_model: str) -> Job | None:
             .order_by(Document.created_at, Document.id)
             .limit(1)
             .with_for_update(of=Document, skip_locked=True)
-        ).first()
-        if row is None:
-            return None
-        document, data = row
+        )
+        while True:
+            document = db.scalar(eligible)
+            if document is None:
+                return None
+            if document.status == "ready":
+                document.attempts = 0
+            if document.attempts < MAX_ATTEMPTS:
+                break
+            # The final worker may have crashed before recording a failure.
+            _finish_document(db, document, embedding_model, [], [], RETRY_ERROR)
+            db.flush()
+
+        data = db.scalar(select(DocumentFile.pdf).where(DocumentFile.document_id == document.id))
         claim_id = uuid4()
+        document.attempts += 1
         document.status = "processing"
         document.progress = 10
         document.error = None
         document.claim_id = claim_id
         document.lease_until = func.now() + LEASE
-        return Job(document.id, document.workspace_id, claim_id, document.filename, data)
+        return Job(document.id, document.workspace_id, claim_id, document.filename, data, document.attempts)
 
 
 def update_progress(sessions: sessionmaker, job: Job, progress: int) -> bool:
@@ -81,40 +94,40 @@ def complete_job(
 ) -> None:
     with sessions.begin() as db:
         document = db.scalar(select(Document).where(*job.document_filter()).with_for_update())
-        if document is None:
-            return
-        db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
-        if error is None:
-            db.add_all(
-                DocumentChunk(
-                    document_id=document.id, engine_chunk_id=chunk.id, page=chunk.page, ordinal=ordinal,
-                    text=chunk.text, embedding=vector,
-                )
-                for ordinal, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True))
+        if document is not None:
+            _finish_document(db, document, model, chunks, vectors, error)
+
+
+def _finish_document(
+    db: Session, document: Document, model: str,
+    chunks: list[Chunk], vectors: list[list[float]], error: str | None,
+) -> None:
+    db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
+    if error is None:
+        db.add_all(
+            DocumentChunk(
+                document_id=document.id, engine_chunk_id=chunk.id, page=chunk.page, ordinal=ordinal,
+                text=chunk.text, embedding=vector,
             )
-        document.status = "failed" if error else "ready"
-        document.progress = 0 if error else 100
-        document.embedding_model = None if error else model
-        document.error = error
-        document.claim_id = None
-        document.lease_until = None
+            for ordinal, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True))
+        )
+    document.status = "failed" if error else "ready"
+    document.progress = 0 if error else 100
+    document.embedding_model = None if error else model
+    document.error = error
+    document.claim_id = None
+    document.lease_until = None
 
 
-def process_one(sessions: sessionmaker, limits: DocumentLimits, embedder: Embedder) -> bool:
-    job = claim_job(sessions, embedder.name)
-    if job is None:
-        return False
+def _process_job(sessions: sessionmaker, job: Job, limits: DocumentLimits, embedder: Embedder) -> None:
     chunks = []
     vectors = []
     error = None
     try:
-        payload = run_pdf_task("extract", job.data, job.filename, str(limits.characters), timeout=limits.timeout)
-        chunks = [Chunk(**fields) for fields in json.loads(payload)]
-        if not chunks:
-            raise PdfTaskError("The PDF has no selectable text.")
+        chunks = extract_chunks(job.data, job.filename, limits.characters, limits.timeout)
         for offset in range(0, len(chunks), BATCH_SIZE):
             if not update_progress(sessions, job, 50 + (49 * offset // len(chunks))):
-                return True
+                return
             batch = chunks[offset:offset + BATCH_SIZE]
             embedded = embedder.embed([chunk.text for chunk in batch])
             if len(embedded) != len(batch):
@@ -132,6 +145,19 @@ def process_one(sessions: sessionmaker, limits: DocumentLimits, embedder: Embedd
         error = "The embedding provider could not index this document."
 
     complete_job(sessions, job, embedder.name, chunks, vectors, error)
+
+
+def process_one(sessions: sessionmaker, limits: DocumentLimits, embedder: Embedder) -> bool:
+    job = claim_job(sessions, embedder.name)
+    if job is None:
+        return False
+    try:
+        _process_job(sessions, job, limits, embedder)
+    except Exception as exc:
+        if job.attempts < MAX_ATTEMPTS:
+            raise
+        logger.error("Ingestion reached its retry limit (%s).", type(exc).__name__)
+        complete_job(sessions, job, embedder.name, [], [], RETRY_ERROR)
     return True
 
 

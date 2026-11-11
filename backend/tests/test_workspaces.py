@@ -11,6 +11,7 @@ from PIL import Image
 from reportlab.pdfgen import canvas
 from sqlalchemy import func, select, update
 
+from backend.app import pdf_tasks
 from backend.app.auth import CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE
 from backend.app.db.models import Document, DocumentChunk, DocumentFile, LoginSession, PagePreview, User
 from backend.app.main import app
@@ -293,7 +294,9 @@ def test_worker_reclaims_jobs_reindexes_and_respects_deletion(workspace_client, 
     assert store.search(QUESTION, mode="hybrid")
     assert PgVectorStore(sessions, original, workspace_id).search(QUESTION, mode="hybrid") == []
     with sessions() as db:
-        assert db.get(Document, document_id).embedding_model == replacement.name
+        document = db.get(Document, document_id)
+        assert document.embedding_model == replacement.name
+        assert document.attempts == 1
         assert len(db.scalar(select(DocumentChunk.embedding))) == 256
 
     job = claim_job(sessions, original.name)
@@ -302,6 +305,70 @@ def test_worker_reclaims_jobs_reindexes_and_respects_deletion(workspace_client, 
     complete_job(sessions, job, original.name, [], [], "Finished after deletion.")
     assert store.search(QUESTION, mode="hybrid") == []
     assert client.get(f"{API}/documents/{document_id}").status_code == 404
+
+
+def test_unexpected_ingestion_error_fails_on_third_attempt(workspace_client, sessions):
+    client = workspace_client
+    signup(client, "alpha")
+    document_id = queue(client, make_pdf(ALPHA_TEXT))
+    path = f"{API}/documents/{document_id}"
+    limits = DocumentLimits.from_env()
+
+    class BrokenEmbedder(HashingEmbedder):
+        def embed(self, texts):
+            raise RuntimeError("Private diagnostic")
+
+    embedder = BrokenEmbedder()
+    for attempt in (1, 2):
+        with pytest.raises(RuntimeError, match="Private diagnostic"):
+            process_one(sessions, limits, embedder)
+        assert not process_one(sessions, limits, embedder)
+        with sessions.begin() as db:
+            document = db.get(Document, document_id)
+            assert document.status == "processing" and document.attempts == attempt
+            document.lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+    assert process_one(sessions, limits, embedder)
+    document = client.get(path).json()
+    assert document["status"] == "failed"
+    assert "after three attempts" in document["error"]
+    assert "Private diagnostic" not in document["error"]
+    with sessions() as db:
+        record = db.get(Document, document_id)
+        assert record.attempts == 3 and record.claim_id is None and record.lease_until is None
+    assert not process_one(sessions, limits, embedder)
+
+
+def test_expired_final_claim_fails_without_reclaiming_it(workspace_client, sessions):
+    client = workspace_client
+    signup(client, "alpha")
+    exhausted_id = queue(client, make_pdf(ALPHA_TEXT))
+    embedder = HashingEmbedder()
+    for attempt in (1, 2, 3):
+        job = claim_job(sessions, embedder.name)
+        assert job.document_id == exhausted_id and job.attempts == attempt
+        with sessions.begin() as db:
+            db.get(Document, exhausted_id).lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+    queued_id = queue(client, make_pdf(BETA_TEXT))
+    assert process_one(sessions, DocumentLimits.from_env(), embedder)
+    failed = client.get(f"{API}/documents/{exhausted_id}").json()
+    assert failed["status"] == "failed" and "after three attempts" in failed["error"]
+    assert client.get(f"{API}/documents/{queued_id}").json()["status"] == "ready"
+    with sessions() as db:
+        assert db.get(Document, exhausted_id).attempts == 3
+
+
+@pytest.mark.parametrize("payload", [
+    b'{"broken":',
+    b'{"id":"one","source":"handbook.pdf","page":1,"text":"This should be in a list."}',
+    b'[{"id":"one","source":"handbook.pdf","page":1}]',
+    b'[{"id":"one","source":"handbook.pdf","page":true,"text":"Invalid page type."}]',
+])
+def test_malformed_extraction_is_a_pdf_task_error(monkeypatch, payload):
+    monkeypatch.setattr(pdf_tasks, "run_pdf_task", lambda *args, **kwargs: payload)
+    with pytest.raises(PdfTaskError, match="The PDF text could not be extracted"):
+        pdf_tasks.extract_chunks(b"sample", "handbook.pdf", 1000, 20)
 
 
 def test_pgvector_hybrid_retrieval_matches_engine(sessions):

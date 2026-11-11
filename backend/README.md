@@ -30,13 +30,15 @@ Keep the session and CSRF cookies from signup or login. Send the value of `__Hos
 
 PDFs are stored in Postgres under their document IDs. Defaults allow 10 MiB per PDF, 80 pages, and 500,000 extracted characters. The page count, extraction, and preview operations have a 20-second timeout per operation. Previews are capped at 1,400 pixels on their longest side. Configure the limits with `MAX_UPLOAD_MB`, `MAX_UPLOAD_PAGES`, `SOURCED_MAX_PDF_CHARS`, and `SOURCED_PDF_TIMEOUT_SECONDS`.
 
-The worker picks up queued uploads and can reclaim a job after its 15-minute lease expires. When the embedding model changes, the worker reindexes ready documents from their stored PDFs. Retrieval excludes documents indexed by a different model until they are ready again. Run the API and all workers with the same embedding configuration.
+The worker picks up queued uploads and can reclaim a job after its 15-minute lease expires. A job gets up to three attempts per upload or reindexing run. Invalid PDFs and other known errors can fail immediately with a document status message. When the embedding model changes, the worker reindexes ready documents from their stored PDFs. Retrieval excludes documents indexed by a different model until they are ready again. Run the API and all workers with the same embedding configuration.
 
 Hybrid search uses exact pgvector cosine distance on the allowed chunks and the engine's BM25 and rank fusion. Keyword and hybrid searches support up to 10,000 chunks per request. Select fewer documents or configure dense search for larger libraries.
 
 ## Verify locally
 
 Run Docker with Linux containers enabled. Tests create a disposable Postgres container on a random loopback port, verify its identity, run Alembic, and stop it afterward. The test connection comes from that container.
+
+When Docker is unavailable, pytest skips the Postgres-backed tests and still runs the engine and other backend tests. Use `pytest -rs` to see the skip reason. Set `SOURCED_REQUIRE_DB_TESTS=1` in CI to make Docker unavailability a test error.
 
 ```sh
 python -m pip install -r requirements-dev.txt

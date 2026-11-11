@@ -1,3 +1,5 @@
+from os import environ
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -5,13 +7,18 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.app.main import app
 
-from .postgres import disposable_postgres
+from .postgres import DockerUnavailable, disposable_postgres
 
 
 @pytest.fixture(scope="session")
 def postgres():
-    with disposable_postgres() as engine:
-        yield engine
+    try:
+        with disposable_postgres() as engine:
+            yield engine
+    except DockerUnavailable as exc:
+        if environ.get("SOURCED_REQUIRE_DB_TESTS") == "1":
+            pytest.fail(f"SOURCED_REQUIRE_DB_TESTS=1 requires Docker. {exc}", pytrace=False)
+        pytest.skip(str(exc))
 
 
 @pytest.fixture

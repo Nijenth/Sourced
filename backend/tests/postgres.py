@@ -20,8 +20,12 @@ IMAGE = "pgvector/pgvector:0.8.7-pg16"
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
-def docker(*args, env=None):
-    result = subprocess.run(["docker", *args], capture_output=True, text=True, env=env, timeout=240)
+class DockerUnavailable(RuntimeError):
+    pass
+
+
+def docker(*args, env=None, timeout=240):
+    result = subprocess.run(["docker", *args], capture_output=True, text=True, env=env, timeout=timeout)
     if result.returncode:
         raise RuntimeError(f"Docker {args[0]} failed. {result.stderr.strip()}")
     return result.stdout.strip()
@@ -29,6 +33,15 @@ def docker(*args, env=None):
 
 @contextmanager
 def disposable_postgres():
+    try:
+        os_type = docker("info", "--format", "{{.OSType}}", timeout=10)
+    except FileNotFoundError:
+        raise DockerUnavailable("Docker CLI was not found on PATH.") from None
+    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+        raise DockerUnavailable("The Docker daemon is unreachable. Start Docker to run the Postgres tests.") from None
+    if os_type != "linux":
+        raise DockerUnavailable("Docker must be running Linux containers for the Postgres tests.")
+
     suffix = uuid4().hex
     name = f"sourced-test-{suffix}"
     user = f"sourced_{suffix}"

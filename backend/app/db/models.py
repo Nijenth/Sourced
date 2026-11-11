@@ -57,6 +57,7 @@ class Document(Base):
     __table_args__ = (
         CheckConstraint("status IN ('queued', 'processing', 'ready', 'failed')", name="document_status"),
         CheckConstraint("progress BETWEEN 0 AND 100", name="document_progress"),
+        CheckConstraint("attempts >= 0", name="document_attempts"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
@@ -65,6 +66,7 @@ class Document(Base):
     pages: Mapped[int]
     status: Mapped[str] = mapped_column(String(16), index=True)
     progress: Mapped[int]
+    attempts: Mapped[int] = mapped_column(server_default="0")
     error: Mapped[str | None] = mapped_column(Text)
     embedding_model: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
