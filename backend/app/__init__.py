@@ -1,0 +1,1 @@
+"""Sourced FastAPI application."""

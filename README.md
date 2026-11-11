@@ -142,6 +142,28 @@ The app opens at http://localhost:8501. The reranker downloads a small model (ab
 
 Every provider with a key appears in the model picker. `CHAT_PROVIDER` chooses which comes first. Changing `EMBEDDING_PROVIDER` re-indexes the documents automatically.
 
+### Run the Sourced API
+
+The milestone M1 API runs locally on Python 3.12 with the fictional Brightleaf Studio handbook. It builds the index in memory on the first chat request. The sample API has no authentication.
+
+```powershell
+pip install -r backend/requirements.txt
+$env:RAG_OFFLINE_MODE = "1"
+python -m uvicorn backend.app.main:app
+```
+
+On macOS or Linux, run `RAG_OFFLINE_MODE=1 python -m uvicorn backend.app.main:app` after installing the requirements.
+
+Open the interactive API docs at `http://127.0.0.1:8000/docs`. `GET /api/v1/health` checks liveness. `GET /api/v1/providers` lists chat providers and their configuration status. Try `POST /api/v1/chat` with this JSON body.
+
+```json
+{"question": "How many days of annual leave do I get?", "provider": "offline"}
+```
+
+`provider` defaults to the first configured provider. Omit `document_ids` or send `["brightleaf-handbook"]` to search the sample. `history` accepts up to six recent `user` or `assistant` messages with a `content` field. The API returns page numbers in citations and leaves `preview_url` null in M1.
+
+To use a configured AI provider, start Uvicorn with the provider settings in the environment and offline mode disabled. Set `RERANKER=none` to skip loading the cross-encoder model.
+
 ## Deploy a live demo (free)
 
 1. Push this folder to a public GitHub repository. `.env` is in `.gitignore`, so your keys stay local.
