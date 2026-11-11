@@ -6,7 +6,7 @@ services:
     name: sourced
     runtime: docker
     plan: free
-    region: singapore           # closest free region to India; pick the Neon region to match
+    region: virginia           # closest free region to India; pick the Neon region to match
     healthCheckPath: /api/v1/health
     autoDeploy: true
     envVars:
