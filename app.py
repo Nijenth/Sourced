@@ -25,6 +25,7 @@ from rag.citations import INVALID_OUTPUT, UNVERIFIED, snippet  # noqa: E402
 from rag.config import Settings, load_settings  # noqa: E402
 from rag.documents import PdfError, chunk_pages, count_pages, file_hash, load_pdf  # noqa: E402
 from rag.pipeline import RAGPipeline  # noqa: E402
+from rag.judge import Judge  # noqa: E402
 from rag.rerank import make_reranker  # noqa: E402
 from rag.providers import (  # noqa: E402
     ProviderError,
@@ -241,6 +242,18 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
             st.caption(f"Searched the closest passages ({pages}) and none of them answer this.")
         return
 
+    judgement = msg.get("judgement")
+    if judgement:
+        problems = "; ".join(md_escape(p) for p in judgement.get("problems", [])[:3])
+        verdict = judgement.get("verdict")
+        if verdict == "supported":
+            st.caption("✓ Accuracy check: every claim matches the cited passages.")
+        elif verdict == "partial":
+            st.warning("Accuracy check: some details may not be fully supported by the sources." + (f" ({problems})" if problems else ""))
+        elif verdict == "unsupported":
+            st.error("Accuracy check: the cited passages don't support this answer." + (f" ({problems})" if problems else ""))
+        else:
+            st.caption("The accuracy check couldn't run for this answer.")
     if msg.get("partial"):
         st.caption("The documents only partly answer this. Check the sources below.")
     citations = msg.get("citations", [])
@@ -263,6 +276,9 @@ def answer_to_message(answer) -> dict:
         "content": answer.text,
         "found": answer.found,
         "partial": answer.partial,
+        "judgement": {"verdict": answer.judgement.verdict, "problems": answer.judgement.problems}
+        if answer.judgement
+        else None,
         "status": answer.status,
         "reason": answer.reason,
         "passages": [
@@ -430,8 +446,15 @@ if prompt:
         except ProviderError as exc:
             st.warning(f"{exc} Answering without reranking.")
             reranker = None
+        judge = None
+        if settings.judge and not settings.fake_mode:
+            try:
+                judge = Judge(get_chat(settings.judge_provider or provider))
+            except ProviderError as exc:
+                st.warning(f"{exc} Answering without the accuracy check.")
         pipeline = RAGPipeline(store, get_chat(provider), top_k=settings.top_k, retrieval_mode=settings.retrieval_mode,
-                               reranker=reranker, rerank_pool=settings.rerank_pool)
+                               reranker=reranker, rerank_pool=settings.rerank_pool, judge=judge,
+                               judge_action=settings.judge_action)
         with st.chat_message("assistant"):
             with st.spinner("Searching the documents…"):
                 try:

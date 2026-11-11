@@ -210,6 +210,10 @@ def main() -> None:
                     help="search method (default: RETRIEVAL_MODE setting, else hybrid)")
     ap.add_argument("--rerank", choices=["none", "cross-encoder"], default=s.reranker if s.reranker in ("none", "cross-encoder") else "none",
                     help="rerank a wider pool of passages before answering (default: RERANKER setting, else none)")
+    ap.add_argument("--judge", nargs="?", const="same", default=None, metavar="PROVIDER",
+                    help="run the accuracy judge on every answer; optionally name the judging provider (default: same)")
+    ap.add_argument("--tamper", action="store_true",
+                    help="with --judge: swap a number in each correct answer and count how many the judge catches")
     ap.add_argument("--retrieval-only", action="store_true",
                     help="compare dense, bm25 and hybrid search without calling any AI model (free and fast)")
     args = ap.parse_args()
@@ -229,8 +233,23 @@ def main() -> None:
         reranker = make_reranker(args.rerank, s.rerank_model)
     except ProviderError as exc:
         sys.exit(str(exc))
+    judge = None
+    if args.judge:
+        from rag.judge import Judge
+        from rag.providers import make_chat
+
+        judge_name = args.provider if args.judge == "same" else args.judge
+        env = dict(os.environ)
+        if judge_name == "offline":
+            sys.exit("The offline mode can't judge answers; name a real provider, e.g. --judge groq")
+        try:
+            judge = Judge(make_chat(judge_name, env))
+        except ProviderError as exc:
+            sys.exit(str(exc))
+    if args.tamper and not judge:
+        sys.exit("--tamper needs --judge")
     pipeline = RAGPipeline(store, chat, top_k=top_k, retrieval_mode=args.retrieval, reranker=reranker,
-                           rerank_pool=s.rerank_pool)
+                           rerank_pool=s.rerank_pool, judge=judge, judge_action="warn")
 
     cases = load_cases(args.category)
     results: list[dict] = []
@@ -256,7 +275,8 @@ def main() -> None:
             break
         hit_pages = [h.chunk.page for h in a.hits]
         cited_pages = [c.page for c in a.citations]
-        r = {"q": q, "cat": cat, "answerable": bool(gold), "a": a}
+        r = {"q": q, "cat": cat, "answerable": bool(gold), "a": a,
+             "judge": a.judgement.verdict if a.judgement else None}
         if gold:
             r["hit"], r["rr"] = page_metrics(gold, hit_pages, needs_all)
             r["answer_ok"] = a.found and has_all(a.text, case.get("expect", []))
@@ -279,6 +299,8 @@ def main() -> None:
                 print(f"     why: {a.reason}")
             if a.status in ("unverified", "invalid_output") and a.raw:
                 print(f"     model said: {a.raw[:400]!r}")
+        if r["judge"] and r["judge"] != "supported":
+            print(f"     judge: {r['judge']} {a.judgement.problems[:2]}")
 
     if pipeline.rerank_error:
         print(f"\nNote: the reranker failed at least once and retrieval order was used: {pipeline.rerank_error}")
@@ -301,6 +323,43 @@ def main() -> None:
         ("Says \"not found\" for questions the handbook doesn't cover", frac(unanswerable, "ok")),
         ("Answerable questions blocked by the citation checks (lower is better)", frac(answerable, "blocked")),
     ]
+    judge_lines = []
+    if judge:
+        judged = [r for r in results if r["judge"]]
+        counts = {v: sum(r["judge"] == v for r in judged) for v in ("supported", "partial", "unsupported", "error")}
+        good = [r for r in judged if r["answerable"] and r["ok"]]
+        bad = [r for r in judged if r["answerable"] and not r["ok"]]
+        judge_lines = [
+            f"Judge ({judge.name}) verdicts on {len(judged)} answers: "
+            + ", ".join(f"{v} {n}" for v, n in counts.items()),
+            f"Correct answers the judge approved: {sum(r['judge'] == 'supported' for r in good)}/{len(good)}",
+        ]
+        if bad:
+            judge_lines.append(f"Wrong answers the judge flagged: {sum(r['judge'] in ('partial', 'unsupported') for r in bad)}/{len(bad)}")
+        if args.tamper:
+            from dataclasses import replace
+
+            from rag.judge import tamper_number
+
+            caught, tried, misses = 0, 0, []
+            for r in good:
+                a = r["a"]
+                evidence = " ".join(a.hits[c.number - 1].chunk.text for c in a.citations if 1 <= c.number <= len(a.hits))
+                tampered = tamper_number(a.text, evidence)
+                if not tampered:
+                    continue
+                if args.delay:
+                    time.sleep(args.delay)
+                verdict = judge.check(a.search_query, replace(a, text=tampered)).verdict
+                if verdict == "error":
+                    continue
+                tried += 1
+                if verdict in ("partial", "unsupported"):
+                    caught += 1
+                else:
+                    misses.append(f"  missed: {tampered[:160]!r}")
+            judge_lines.append(f"Tampered answers (a number swapped for another from the same passage) the judge caught: {caught}/{tried}")
+            judge_lines += misses
     categories = sorted({r["cat"] for r in results}, key=lambda c: (c != "basic", c))
     by_cat = []
     for c in categories:
@@ -319,6 +378,7 @@ def main() -> None:
         "| --- | --- |",
         *[f"| {k} | {v} |" for k, v in summary],
         "",
+        *([*judge_lines, ""] if judge_lines else []),
         "| Category | Fully correct | Retrieval hit | MRR |",
         "| --- | --- | --- | --- |",
         *[f"| {c} | {ok} | {hit} | {m} |" for c, ok, hit, m in by_cat],
@@ -332,6 +392,9 @@ def main() -> None:
     print()
     for k, v in summary:
         print(f"{v:>12}  {k}")
+    if judge_lines:
+        print()
+        print("\n".join(judge_lines))
     print("\nBy category (fully correct = right facts and right page, or a correct refusal):")
     for c, ok, hit, m in by_cat:
         print(f"  {c:<12} {ok:>12}   retrieval {hit:>12}   MRR {m}")

@@ -249,6 +249,14 @@ def test_number_under_the_wrong_marker_is_accepted_when_a_verified_quote_shows_i
     assert a.status == ANSWERED, a.reason
 
 
+def test_number_cited_under_another_marker_of_the_same_answer_is_accepted():
+    # Groq/Ollama shape: the rule is quoted from [1], and "24 days" (also in [1]) sits under marker [2].
+    sick = "Every employee gets 10 days of paid sick leave per calendar year."
+    raw = _reply("Part-time staff get a pro-rated amount [1]. Full-time staff get 24 days [2].",
+                 [{"source": 1, "quote": "Leave accrues at 2 days per month."}, {"source": 2, "quote": sick}])
+    assert build_answer(raw, _hits(SOURCE, sick), "q").status == ANSWERED
+
+
 def test_number_with_no_supporting_source_or_quote_is_still_blocked():
     sick = "Every employee gets 10 days of paid sick leave per calendar year."
     raw = _reply("Full-time staff get 30 days [2].", [{"source": 1, "quote": REAL_QUOTE}, {"source": 2, "quote": sick}])

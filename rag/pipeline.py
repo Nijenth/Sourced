@@ -1,7 +1,7 @@
 """The question-answering pipeline: rewrite follow-ups, retrieve, answer with citations."""
 from __future__ import annotations
 
-from .citations import INVALID_OUTPUT, NOT_FOUND, Answer, build_answer
+from .citations import ANSWERED, BLOCKED_TEXT, INVALID_OUTPUT, NOT_FOUND, UNVERIFIED, Answer, build_answer
 from .providers import ChatModel
 from .store import VectorStore
 
@@ -13,6 +13,7 @@ Rules:
   - "full": the sources answer the question.
   - "partial": the sources answer only part of it, or give a rule, formula or condition instead of the exact figure asked for. Answer with what the sources do say, cite it, and say briefly what they don't cover.
   - "none": no source addresses the question at all. Say briefly that the documents don't cover it, with no citations.
+- Answer the question that was asked. If the sources only mention a related topic (for example a different benefit, person or place), that does not answer it: use "none", or "partial" for the part they do answer.
 - After each fact, add a marker like [1] or [2] for the source it came from. Every sentence that contains a number needs a marker.
 - Copy numbers exactly as the source states them.
 - For every source you cite, copy one short quote (one sentence or less) word for word from that source, exactly as written.
@@ -41,7 +42,8 @@ def format_sources(hits) -> str:
 
 class RAGPipeline:
     def __init__(self, store: VectorStore, chat: ChatModel, top_k: int = 5, min_score: float = 0.0,
-                 retrieval_mode: str = "hybrid", reranker=None, rerank_pool: int = 20):
+                 retrieval_mode: str = "hybrid", reranker=None, rerank_pool: int = 20, judge=None,
+                 judge_action: str = "warn"):
         self.store = store
         self.chat = chat
         self.top_k = top_k
@@ -50,6 +52,8 @@ class RAGPipeline:
         self.reranker = reranker  # optional: reorders a wider pool before the best top_k are kept
         self.rerank_pool = max(rerank_pool, top_k)
         self.rerank_error = ""  # last reranker failure, if any (the answer still uses retrieval order)
+        self.judge = judge  # optional accuracy check (rag.judge.Judge)
+        self.judge_action = judge_action  # "warn": show its verdict; "block": hide unsupported answers
 
     def standalone_question(self, question: str, history: list[dict]) -> str:
         """Turn a follow-up like "what about part-time staff?" into a full question for retrieval."""
@@ -96,4 +100,11 @@ class RAGPipeline:
             answer.attempts = 2
         if not answer.found and not answer.text:
             answer.text = NOT_FOUND_TEXT
+        if self.judge and answer.status == ANSWERED:
+            answer.judgement = self.judge.check(query, answer)
+            if self.judge_action == "block" and answer.judgement.verdict == "unsupported":
+                claims = "; ".join(answer.judgement.problems[:3]) or "a claim the passages don't state"
+                answer.status, answer.found, answer.text = UNVERIFIED, False, BLOCKED_TEXT
+                answer.reason = f"An accuracy check found claims the sources don't support: {claims}."
+                answer.citations = []
         return answer

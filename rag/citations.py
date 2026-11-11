@@ -72,6 +72,7 @@ class Answer:
     attempts: int = 1  # model calls used to produce the answer
     raw: str = ""  # the model's reply as received, for debugging and evaluation (not shown to users)
     partial: bool = False  # the documents answer only part of the question (or give a rule, not a figure)
+    judgement: object = None  # rag.judge.Judgement when an accuracy check ran
 
 
 class OutputError(ValueError):
@@ -343,29 +344,21 @@ def _build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
                 return _blocked(UNVERIFIED, f"The quote given for source [{n}] isn't in that source.", hits, search_query)
             quotes[n] = located
 
-    # 3. Every number in the answer must appear in a cited source: the sentence's own sources if it has
-    #    markers, otherwise any source the answer cites (models often put one marker after a list).
-    #    A number is also accepted if a verified quote shown to the user contains it, even when the
-    #    model put it under the wrong marker: the evidence is still on screen.
-    quoted_numbers = set().union(*(numbers_in(q) for q in quotes.values())) if quotes else set()
+    # 3. Every number in the answer must appear in at least one source the answer cites. Invented numbers
+    #    are blocked here. Whether a real number is attached to the right claim (e.g. under the right
+    #    marker, or the right table row) is a question of meaning: that is the accuracy judge's job.
     all_cited = sorted(set(marked + listed))
-    evidence_all = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in all_cited)) if all_cited else set()
+    evidence = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in all_cited)) if all_cited else set()
     for sentence in _answer_sentences(text):
-        cited = [n for m in _MARKER.finditer(sentence) for n in _marker_numbers(m)]
         claim_numbers = numbers_in(_MARKER.sub(" ", sentence), ignore_one=True)
         if not claim_numbers:
             continue  # framing or "not covered" sentences need no marker
-        if cited:
-            evidence = set().union(*(numbers_in(hits[n - 1].chunk.text) for n in cited)) | quoted_numbers
-            where = "the cited source or any quoted passage"
-        else:
-            if not all_cited:
-                return _blocked(UNVERIFIED, "A sentence with a specific number has no citation.", hits, search_query)
-            evidence, where = evidence_all, "any cited source"
+        if not all_cited:
+            return _blocked(UNVERIFIED, "A sentence with a specific number has no citation.", hits, search_query)
         missing = sorted(claim_numbers - evidence)
         if missing:
             return _blocked(
-                UNVERIFIED, f"The number(s) {', '.join(missing)} don't appear in {where}.", hits, search_query
+                UNVERIFIED, f"The number(s) {', '.join(missing)} don't appear in any cited source.", hits, search_query
             )
 
     # 4. Build citations in the order they appear.

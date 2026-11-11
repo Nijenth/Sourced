@@ -27,6 +27,9 @@ class Settings:
     reranker: str
     rerank_model: str
     rerank_pool: int
+    judge: bool
+    judge_provider: str
+    judge_action: str
     max_questions_per_session: int
     max_questions_per_day: int
     max_upload_files: int
@@ -43,6 +46,9 @@ def load_settings() -> Settings:
         reranker=(os.getenv("RERANKER", "cross-encoder").strip().lower() or "none"),
         rerank_model=os.getenv("RERANK_MODEL", "").strip(),
         rerank_pool=max(1, _int("RERANK_POOL", 20)),
+        judge=os.getenv("JUDGE", "off").strip().lower() in {"1", "on", "true", "yes"},
+        judge_provider=os.getenv("JUDGE_PROVIDER", "").strip().lower(),
+        judge_action="block" if os.getenv("JUDGE_ACTION", "warn").strip().lower() == "block" else "warn",
         max_questions_per_session=_int("MAX_QUESTIONS_PER_SESSION", 25),
         max_questions_per_day=_int("MAX_QUESTIONS_PER_DAY", 300),
         max_upload_files=_int("MAX_UPLOAD_FILES", 3),
