@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sourced admin: Ask</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F6F7F9}
+a{color:#0F766E}a:hover{color:#0B5A54}
+</style>
+</helmet>
+<div style="min-height: 900px; display: flex; flex-wrap: wrap; font-family: Inter, system-ui, sans-serif; color: #14161A; background: #F6F7F9">
+
+  <nav aria-label="Admin" style="flex: 1 1 232px; max-width: 100%; box-sizing: border-box; padding: 24px 16px; background: #FFFFFF; border-right: 1px solid #E3E6EB; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="7" fill="#0F766E"></rect><path d="M10 8H8v12h2M18 8h2v12h-2" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"></path><circle cx="14" cy="14" r="2" fill="#FFFFFF"></circle></svg>
+      <span style="font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 600; font-size: 20px">Sourced</span>
+    </div>
+    <div style="padding: 10px 12px; border: 1px solid #E3E6EB; border-radius: 10px; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 12px; color: #5B6170">Workspace</span>
+      <span style="font-size: 14px; font-weight: 600">Brightleaf Studio</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <a href="Documents.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 8px; color: #343944; font-size: 14px; text-decoration: none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg>Documents</a>
+      <a href="Ask.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 8px; background: #E7F3F1; color: #0B5A54; font-weight: 600; font-size: 14px; text-decoration: none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"></path></svg>Ask (test)</a>
+      <a href="WidgetSettings.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 8px; color: #343944; font-size: 14px; text-decoration: none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"></path></svg>Website widget</a>
+      <a href="#usage" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 8px; color: #343944; font-size: 14px; text-decoration: none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg>Usage</a>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-wrap: wrap; align-items: stretch">
+
+    <section aria-label="Conversation" style="flex: 3 1 480px; min-width: 0; box-sizing: border-box; padding: 32px clamp(16px, 3vw, 40px); display: flex; flex-direction: column; gap: 24px">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+        <h1 style="margin: 0; font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 600; font-size: 28px">Ask</h1>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+          <label for="model" style="font-size: 13px; color: #5B6170">Answer model</label>
+          <select id="model" style="min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid #CDD2DA; background: #FFFFFF; font: 500 14px Inter, sans-serif; color: #14161A">
+            <option>Ollama · qwen3.6:35b-a3b (private)</option>
+            <option>GroqCloud · gpt-oss-120b</option>
+            <option>OpenAI · gpt-6.1-terra</option>
+          </select>
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #E7F3F1; color: #0B5A54; font-size: 12px; font-weight: 600"><span style="width: 7px; height: 7px; border-radius: 50%; background: #0F766E"></span>Connected</span>
+        </div>
+      </div>
+
+      <div style="align-self: flex-end; max-width: 80%; background: #14161A; color: #FFFFFF; padding: 12px 16px; border-radius: 14px 14px 4px 14px; font-size: 15px; line-height: 1.5">I'm a Director and I'm resigning. How much notice must I give, and how soon must I return my laptop?</div>
+
+      <article aria-label="Answer" style="background: #FFFFFF; border: 1px solid #E3E6EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+        <p style="margin: 0; font-size: 16px; line-height: 1.6">As a Director, you must give <strong>8 weeks' notice</strong> <a href="#source-1" aria-label="Source 1" style="display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 6px; background: #0F766E; color: #FFFFFF; font-size: 12px; font-weight: 600; text-decoration: none">1</a>. Return your laptop and other equipment within <strong>5 working days</strong> of your last day <a href="#source-2" aria-label="Source 2" style="display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 6px; background: #E7F3F1; color: #0B5A54; font-size: 12px; font-weight: 600; text-decoration: none">2</a>.</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; background: #E7F3F1; color: #0B5A54; font-size: 13px; font-weight: 500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"></path><path d="M9 12l2 2 4-4"></path></svg>Accuracy check (GroqCloud): every claim matches the passages</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <a href="#source-1" style="display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1.5px solid #0F766E; color: #0B5A54; font-size: 13px; font-weight: 600; text-decoration: none">[1] Employee_Handbook_v3.2.pdf · p. 4</a>
+          <a href="#source-2" style="display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #CDD2DA; color: #343944; font-size: 13px; font-weight: 500; text-decoration: none">[2] Employee_Handbook_v3.2.pdf · p. 15</a>
+        </div>
+      </article>
+
+      <div style="align-self: flex-end; max-width: 80%; background: #14161A; color: #FFFFFF; padding: 12px 16px; border-radius: 14px 14px 4px 14px; font-size: 15px; line-height: 1.5">What's the dress code for client meetings?</div>
+
+      <article aria-label="Answer" style="background: #FFFFFF; border: 1px solid #E3E6EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 10px">
+        <p style="margin: 0; font-size: 16px; line-height: 1.6">The documents don't cover a dress code.</p>
+        <span style="font-size: 13px; color: #5B6170">Searched the closest passages (pp. 2, 3, 6, 14). None of them answers this, so no answer was made up.</span>
+      </article>
+
+      <form aria-label="Ask a question" style="margin-top: auto; display: flex; gap: 10px; align-items: center; background: #FFFFFF; border: 1px solid #CDD2DA; border-radius: 14px; padding: 8px 8px 8px 16px">
+        <label for="q" style="position: absolute; left: -9999px">Question</label>
+        <input id="q" type="text" placeholder="Ask about your documents…" style="flex: 1; min-width: 0; min-height: 44px; border: none; font: 15px Inter, sans-serif; color: #14161A; background: transparent">
+        <button type="submit" aria-label="Send" style="width: 44px; height: 44px; border-radius: 10px; border: none; background: #0F766E; color: #FFFFFF; cursor: pointer; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+      </form>
+    </section>
+
+    <aside id="source-1" aria-label="Source 1" style="flex: 2 1 340px; min-width: 0; box-sizing: border-box; padding: 32px 28px; background: #FFFFFF; border-left: 1px solid #E3E6EB; display: flex; flex-direction: column; gap: 18px">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 12px; font-weight: 600; color: #0B5A54; text-transform: uppercase; letter-spacing: 0.05em">Source 1 · quote verified</span>
+          <span style="font-size: 16px; font-weight: 600">Employee_Handbook_v3.2.pdf, page 4</span>
+        </div>
+        <button type="button" aria-label="Close source" style="min-width: 44px; min-height: 44px; border: none; background: transparent; color: #5B6170; border-radius: 8px; cursor: pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+      </div>
+      <blockquote style="margin: 0; padding: 14px 16px; background: #F6F7F9; border-radius: 10px; font-size: 14px; line-height: 1.6; color: #343944">Lead, Principal and Director roles | Notice required (either side) — 8 weeks.</blockquote>
+
+      <figure aria-label="Page 4 preview with the cited row highlighted" style="margin: 0; border: 1px solid #E3E6EB; border-radius: 10px; padding: 24px; background: #FFFFFF; display: flex; flex-direction: column; gap: 10px">
+        <span style="font-family: 'Space Grotesk', Inter, sans-serif; font-size: 18px; font-weight: 600; color: #1F5C46">1. Employment basics</span>
+        <div style="height: 8px; width: 92%; background: #E9ECF0; border-radius: 3px"></div>
+        <div style="height: 8px; width: 84%; background: #E9ECF0; border-radius: 3px"></div>
+        <div style="height: 8px; width: 88%; background: #E9ECF0; border-radius: 3px"></div>
+        <span style="margin-top: 8px; font-size: 13px; font-weight: 600; color: #343944">Notice periods</span>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); font-size: 12px; border: 1px solid #D5DAE1; border-radius: 6px; overflow: hidden">
+          <span style="padding: 7px 10px; background: #EEF1F4; font-weight: 600">Situation</span>
+          <span style="padding: 7px 10px; background: #EEF1F4; font-weight: 600">Notice required</span>
+          <span style="padding: 7px 10px; border-top: 1px solid #D5DAE1">During probation</span>
+          <span style="padding: 7px 10px; border-top: 1px solid #D5DAE1">1 week</span>
+          <span style="padding: 7px 10px; border-top: 1px solid #D5DAE1">After probation</span>
+          <span style="padding: 7px 10px; border-top: 1px solid #D5DAE1">4 weeks</span>
+          <span style="padding: 7px 10px; border-top: 1px solid #D5DAE1; background: #FFF4C2; font-weight: 600">Lead, Principal and Director roles</span>
+          <span style="padding: 7px 10px; border-top: 1px solid #D5DAE1; background: #FFF4C2; font-weight: 600">8 weeks</span>
+        </div>
+      </figure>
+      <a href="#open-pdf" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; font-weight: 600">Open the full PDF at page 4
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"></path></svg></a>
+    </aside>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

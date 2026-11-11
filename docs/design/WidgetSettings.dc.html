@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sourced admin: Website widget</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F6F7F9}
+a{color:#0F766E}a:hover{color:#0B5A54}
+input[type=checkbox]{accent-color:#0F766E}
+</style>
+</helmet>
+<div style="min-height: 900px; display: flex; flex-wrap: wrap; font-family: Inter, system-ui, sans-serif; color: #14161A; background: #F6F7F9">
+
+  <nav aria-label="Admin" style="flex: 1 1 232px; max-width: 100%; box-sizing: border-box; padding: 24px 16px; background: #FFFFFF; border-right: 1px solid #E3E6EB; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="7" fill="#0F766E"></rect><path d="M10 8H8v12h2M18 8h2v12h-2" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"></path><circle cx="14" cy="14" r="2" fill="#FFFFFF"></circle></svg>
+      <span style="font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 600; font-size: 20px">Sourced</span>
+    </div>
+    <div style="padding: 10px 12px; border: 1px solid #E3E6EB; border-radius: 10px; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 12px; color: #5B6170">Workspace</span>
+      <span style="font-size: 14px; font-weight: 600">Brightleaf Studio</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <a href="Documents.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 8px; color: #343944; font-size: 14px; text-decoration: none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg>Documents</a>
+      <a href="Ask.dc.html" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 8px; color: #343944; font-size: 14px; text-decoration: none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"></path></svg>Ask (test)</a>
+      <a href="WidgetSettings.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 8px; background: #E7F3F1; color: #0B5A54; font-weight: 600; font-size: 14px; text-decoration: none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"></path></svg>Website widget</a>
+      <a href="#usage" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 8px; color: #343944; font-size: 14px; text-decoration: none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg>Usage</a>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px clamp(16px, 3vw, 40px); display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 600; font-size: 28px">Website widget</h1>
+        <p style="margin: 0; font-size: 14px; color: #5B6170">A chat bubble for your own site. It answers only from the documents you pick below.</p>
+      </div>
+      <button type="button" style="min-height: 44px; padding: 0 18px; border-radius: 10px; border: none; background: #0F766E; color: #FFFFFF; font: 600 14px Inter, sans-serif; cursor: pointer">Save changes</button>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+      <div style="flex: 3 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+
+        <section aria-labelledby="h-install" style="background: #FFFFFF; border: 1px solid #E3E6EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+          <h2 id="h-install" style="margin: 0; font-size: 16px; font-weight: 600">1. Add it to your site</h2>
+          <p style="margin: 0; font-size: 14px; color: #5B6170; line-height: 1.5">Paste this just before <code style="font-family: 'JetBrains Mono', monospace; font-size: 13px">&lt;/body&gt;</code> on every page that should show the chat.</p>
+          <div style="position: relative; background: #14161A; border-radius: 10px; padding: 16px 16px 16px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; justify-content: space-between">
+            <pre style="margin: 0; flex: 1 1 320px; min-width: 0; overflow-x: auto; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; line-height: 1.6; color: #E6E8EC"><span style="color: #8FD3C8">&lt;script</span> <span style="color: #F2C879">src</span>=<span style="color: #B9E3A0">"https://cdn.sourced.example/widget.js"</span>
+        <span style="color: #F2C879">data-site-key</span>=<span style="color: #B9E3A0">"pk_live_brightleaf_7Q2x"</span> <span style="color: #F2C879">async</span><span style="color: #8FD3C8">&gt;&lt;/script&gt;</span></pre>
+            <button type="button" style="min-height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #4A505C; background: transparent; color: #FFFFFF; font: 500 13px Inter, sans-serif; cursor: pointer">Copy code</button>
+          </div>
+          <p style="margin: 0; font-size: 13px; color: #5B6170">The site key is public. It only works on the websites listed below, and it can't upload or delete anything.</p>
+        </section>
+
+        <section aria-labelledby="h-domains" style="background: #FFFFFF; border: 1px solid #E3E6EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+          <h2 id="h-domains" style="margin: 0; font-size: 16px; font-weight: 600">2. Who can ask, and where</h2>
+          <fieldset style="margin: 0; padding: 0; border: none; display: flex; flex-direction: column; gap: 8px">
+            <legend style="font-size: 14px; font-weight: 500; margin-bottom: 8px">Access</legend>
+            <label style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #E3E6EB; border-radius: 10px; font-size: 14px; line-height: 1.45"><input type="radio" name="access" style="width: 18px; height: 18px; margin-top: 1px; accent-color: #0F766E"><span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Anyone on these websites</span><span style="color: #5B6170">For public help pages. Treat the chosen documents as public.</span></span></label>
+            <label style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1.5px solid #0F766E; border-radius: 10px; background: #F4FAF9; font-size: 14px; line-height: 1.45"><input type="radio" name="access" checked style="width: 18px; height: 18px; margin-top: 1px; accent-color: #0F766E"><span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Only people signed in to your site or app</span><span style="color: #5B6170">For internal documents. Your server asks Sourced for a short-lived pass for each user. Also used by Android and iOS apps.</span></span></label>
+          </fieldset>
+          <span style="font-size: 14px; font-weight: 500">Websites allowed to show it</span>
+          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">
+            <li style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 12px; border: 1px solid #E3E6EB; border-radius: 10px">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">people.brightleaf.example</span>
+              <button type="button" aria-label="Remove people.brightleaf.example" style="min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #5B6170; font: 500 13px Inter, sans-serif; cursor: pointer">Remove</button>
+            </li>
+            <li style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 12px; border: 1px solid #E3E6EB; border-radius: 10px">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">intranet.brightleaf.example</span>
+              <button type="button" aria-label="Remove intranet.brightleaf.example" style="min-height: 36px; padding: 0 10px; border: none; background: transparent; color: #5B6170; font: 500 13px Inter, sans-serif; cursor: pointer">Remove</button>
+            </li>
+          </ul>
+          <form style="display: flex; flex-wrap: wrap; gap: 8px">
+            <label for="dom" style="position: absolute; left: -9999px">Add a website</label>
+            <input id="dom" type="text" placeholder="e.g. help.brightleaf.example" style="flex: 1 1 240px; min-height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1px solid #CDD2DA; font: 14px Inter, sans-serif; color: #14161A">
+            <button type="submit" style="min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #CDD2DA; background: #FFFFFF; color: #14161A; font: 600 14px Inter, sans-serif; cursor: pointer">Add website</button>
+          </form>
+        </section>
+
+        <section aria-labelledby="h-docs" style="background: #FFFFFF; border: 1px solid #E3E6EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+          <h2 id="h-docs" style="margin: 0; font-size: 16px; font-weight: 600">3. Documents it can answer from</h2>
+          <p style="margin: 0; font-size: 14px; color: #5B6170">Visitors can see quotes from these documents, so leave out anything private.</p>
+          <label style="display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px"><input type="checkbox" checked style="width: 18px; height: 18px">Employee_Handbook_v3.2.pdf</label>
+          <label style="display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px"><input type="checkbox" checked style="width: 18px; height: 18px">Travel_and_Expenses_Policy.pdf</label>
+          <label style="display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; color: #5B6170"><input type="checkbox" disabled style="width: 18px; height: 18px">IT_Security_Guidelines.pdf <span style="padding: 2px 8px; border-radius: 999px; background: #EEF1F6; color: #2D3A57; font-size: 12px; font-weight: 600">Processing</span></label>
+        </section>
+
+        <section aria-labelledby="h-answers" style="background: #FFFFFF; border: 1px solid #E3E6EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <h2 id="h-answers" style="margin: 0; font-size: 16px; font-weight: 600">4. How it answers</h2>
+          <fieldset style="margin: 0; padding: 0; border: none; display: flex; flex-direction: column; gap: 8px">
+            <legend style="font-size: 14px; font-weight: 500; margin-bottom: 8px">Answer model</legend>
+            <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; border: 1.5px solid #0F766E; border-radius: 10px; background: #F4FAF9; font-size: 14px"><input type="radio" name="m" checked style="width: 18px; height: 18px; accent-color: #0F766E"><span style="flex: 1">GroqCloud · gpt-oss-120b</span><span style="padding: 2px 8px; border-radius: 999px; background: #E7F3F1; color: #0B5A54; font-size: 12px; font-weight: 600">Connected</span></label>
+            <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; border: 1px solid #E3E6EB; border-radius: 10px; font-size: 14px"><input type="radio" name="m" style="width: 18px; height: 18px; accent-color: #0F766E"><span style="flex: 1">Ollama · qwen3.6:35b-a3b <span style="color: #5B6170">(runs on your server, private)</span></span><span style="padding: 2px 8px; border-radius: 999px; background: #E7F3F1; color: #0B5A54; font-size: 12px; font-weight: 600">Ready</span></label>
+            <label style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; border: 1px solid #E3E6EB; border-radius: 10px; font-size: 14px; color: #5B6170"><input type="radio" name="m" disabled style="width: 18px; height: 18px"><span style="flex: 1">OpenAI</span><a href="#settings" style="font-size: 13px; font-weight: 600">Add API key</a></label>
+          </fieldset>
+          <label style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 10px; background: #F6F7F9; font-size: 14px; line-height: 1.5">
+            <input type="checkbox" role="switch" checked style="width: 18px; height: 18px; margin-top: 2px">
+            <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Accuracy check</span><span style="color: #5B6170">A second model re-reads every answer against the sources. Answers it can't confirm are held back instead of shown.</span></span>
+          </label>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <label for="fallback" style="font-size: 14px; font-weight: 500">When the documents don't cover a question</label>
+            <input id="fallback" type="text" value="Try the People team: people@brightleaf.example" style="min-height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1px solid #CDD2DA; font: 14px Inter, sans-serif; color: #14161A">
+          </div>
+        </section>
+      </div>
+
+      <aside aria-label="Look and preview" style="flex: 2 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+        <section aria-labelledby="h-look" style="background: #FFFFFF; border: 1px solid #E3E6EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <h2 id="h-look" style="margin: 0; font-size: 16px; font-weight: 600">5. Look</h2>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <label for="wtitle" style="font-size: 14px; font-weight: 500">Title</label>
+            <input id="wtitle" type="text" value="Ask the handbook" style="min-height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1px solid #CDD2DA; font: 14px Inter, sans-serif; color: #14161A">
+          </div>
+          <fieldset style="margin: 0; padding: 0; border: none">
+            <legend style="font-size: 14px; font-weight: 500; margin-bottom: 8px">Brand color</legend>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap">
+              <button type="button" aria-label="Forest green (selected)" aria-pressed="true" style="width: 40px; height: 40px; border-radius: 50%; border: 3px solid #FFFFFF; outline: 2px solid #14161A; background: #1F5C46; cursor: pointer"></button>
+              <button type="button" aria-label="Blue" aria-pressed="false" style="width: 40px; height: 40px; border-radius: 50%; border: none; background: #2445A8; cursor: pointer"></button>
+              <button type="button" aria-label="Plum" aria-pressed="false" style="width: 40px; height: 40px; border-radius: 50%; border: none; background: #7A2E8E; cursor: pointer"></button>
+              <button type="button" aria-label="Rust" aria-pressed="false" style="width: 40px; height: 40px; border-radius: 50%; border: none; background: #B4410F; cursor: pointer"></button>
+            </div>
+          </fieldset>
+        </section>
+
+        <section aria-label="Preview" style="background: #EEF0F3; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 12px; align-items: stretch">
+          <span style="font-size: 13px; font-weight: 600; color: #5B6170">Preview</span>
+          <div style="background: #FFFFFF; border-radius: 14px; box-shadow: 0 8px 24px rgba(20, 22, 26, 0.12); overflow: hidden">
+            <div style="background: #1F5C46; color: #FFFFFF; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px">
+              <span style="font-weight: 600; font-size: 14px">Ask the handbook</span>
+              <span style="font-size: 11px; opacity: 0.9">Answers only from Brightleaf's policies, with sources</span>
+            </div>
+            <div style="padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #FBFAF7">
+              <div style="align-self: flex-end; background: #1F5C46; color: #FFFFFF; padding: 8px 10px; border-radius: 10px 10px 4px 10px; font-size: 13px">How many sick days do I get?</div>
+              <div style="background: #FFFFFF; border: 1px solid #ECE9E2; padding: 8px 10px; border-radius: 10px 10px 10px 4px; font-size: 13px; line-height: 1.45">You get 10 paid sick days a year <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 4px; background: #1F5C46; color: #FFFFFF; font-size: 10px; font-weight: 600">1</span></div>
+            </div>
+            <div style="padding: 6px; text-align: center; font-size: 10px; color: #5F646C">Powered by Sourced</div>
+          </div>
+          <div style="align-self: flex-end; width: 48px; height: 48px; border-radius: 50%; background: #1F5C46; display: flex; align-items: center; justify-content: center; color: #FFFFFF"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"></path></svg></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

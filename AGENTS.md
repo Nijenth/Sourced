@@ -1,12 +1,13 @@
 # AGENTS.md: rules for AI coding agents in this repository
 
-Sourced is a retrieval-augmented chatbot over PDFs. The `rag/` package is the engine; `app.py` is a Streamlit demo on top of it. A full-stack version (FastAPI + React) is specified in `docs/fullstack-brief.md`.
+Sourced is a retrieval-augmented chatbot over PDFs. The `rag/` package is the engine; `app.py` is a Streamlit demo on top of it. A full-stack, API-first version (FastAPI backend, React admin dashboard, embeddable website widget, mobile support) is specified in `docs/fullstack-brief.md`, with the screens in `docs/design/`.
 
 ## Naming
 
 - The product is called **Sourced** (it was called "DocChat" earlier; older commits use that name). Use "Sourced" in every user-facing title, page heading, document and README text.
 - The GitHub repository is `Nijenth/Sourced`. A local checkout may be in a folder named `rag-chatbot` or `sourced`; don't rely on the folder name.
-- New components follow the name: `sourced-api` (FastAPI backend), `sourced-web` (React frontend), and `sourced-` prefixes for Docker services, images and database names.
+- New components follow the name: `sourced-api` (FastAPI backend), `sourced-web` (React admin dashboard), `sourced-widget` (embeddable chat), and `sourced-` prefixes for Docker services, images and database names.
+- Sourced is built by the studio **Dittroid**. The studio's own website is a separate project; don't add it to this repository.
 - The Python engine package stays `rag/`; don't rename it.
 
 ## Setup and checks
@@ -28,7 +29,8 @@ No API keys are needed for tests. `RAG_OFFLINE_MODE=1` runs the whole app with k
 | `rag/` | Engine maintainer | **Do not modify.** If you need an engine change, write the request in `docs/engine-requests.md` (what, why, proposed interface) and work around it until it lands. |
 | `app.py` | Engine maintainer | Must keep working; don't refactor it as part of other work. |
 | `tests/`, `eval/` | Engine maintainer | Don't edit existing tests or questions. Add new test files for new code. |
-| `backend/`, `frontend/`, `deploy/` | Full-stack work | Yours, per `docs/fullstack-brief.md`. |
+| `backend/`, `frontend/`, `widget/`, `demo/`, `deploy/` | Full-stack work | Yours, per `docs/fullstack-brief.md`. |
+| `docs/design/` | Product owner | Read-only reference for the screens. Don't edit; ask if something is unclear. |
 
 ## Rules
 
