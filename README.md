@@ -1,6 +1,6 @@
-# DocChat: chat with your documents
+# DocChat: chat with your documents, with citations you can check
 
-Ask questions about your PDFs and get short answers that come only from the documents. Every answer shows the file, the page and the exact passage it came from, and you can open the page to check.
+Ask questions about your PDFs and get short answers drawn only from the documents. Every answer shows the file, the page and the exact passage behind it, and the app refuses to show answers it can't back up.
 
 **Live demo:** _add your Streamlit link here_
 
@@ -10,96 +10,152 @@ Ask questions about your PDFs and get short answers that come only from the docu
 
 The demo opens with a 16-page employee handbook for **Brightleaf Studio, a fictional design agency**, so you can try it straight away. You can also upload your own PDFs.
 
-## What it does
+## Highlights
 
-- **Answers only from your documents.** The model is told to use only the passages it's given. If the answer isn't there, it says so instead of guessing.
-- **Cites the page and passage for every claim.** Answers carry markers like [1]. Each marker opens the exact passage and a rendered image of the page.
-- **Checks its own quotes.** Before a quote is shown, the app checks it word for word against the PDF text. If the model paraphrased, the app shows the real passage instead and labels it.
-- **Handles follow-ups.** "And for part-time staff?" is rewritten into a full question before searching.
-- **Works with Claude or OpenAI.** With both keys set, you can switch models from the sidebar.
-- **Protects the API bill.** It limits questions per session and per day, the number of uploads, file size and total pages.
-- **Comes with an evaluation set.** 15 questions with known answers measure retrieval, answer accuracy, citation accuracy and refusals.
+| | |
+| --- | --- |
+| **Five AI providers, one interface** | OpenAI, Anthropic (Claude), Google Gemini, GroqCloud and Ollama (fully local). Mix and match: one provider for search, another for answers. |
+| **Hybrid search + reranking** | Keyword search (BM25, written from scratch) and meaning-based search, fused with Reciprocal Rank Fusion, then reordered by a local cross-encoder. Right page in the top 5 for **100%** of test questions, ranked first almost every time (**MRR 0.97**). |
+| **Fail-closed citations** | Quotes are checked against the PDF, and every number in an answer must appear in a cited source. Answers that fail are hidden and the closest passages are shown instead. |
+| **Accuracy judge** | An optional second model checks each claim against its passages. It caught **33 of 33** deliberately tampered answers. |
+| **Measured, not guessed** | A 35-question evaluation in 7 categories, a free retrieval comparison, a tamper test for the judge, and **126 automated tests**. |
+| **Can run free and private** | With Ollama, everything runs on your own computer: no API keys, no cost, no data leaving the machine. |
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A[PDF upload] --> B[Extract text page by page<br/>remove repeated headers and footers]
+    A[PDF] --> B[Extract text page by page<br/>drop repeated headers/footers]
     B --> C[Split into passages<br/>never across pages]
-    C --> D[OpenAI embeddings]
-    D --> E[(Chroma vector store)]
+    C --> D[Embeddings<br/>OpenAI, Gemini or Ollama]
+    C --> K[BM25 keyword index]
+    D --> E[(Chroma)]
     Q[Question] --> R[Rewrite follow-ups<br/>into full questions]
-    R --> S[Find the 5 closest passages]
+    R --> S[Hybrid search: 20 candidates<br/>dense + BM25, fused with RRF]
     E --> S
-    S --> L[Claude or OpenAI answers<br/>from those passages only, as JSON]
-    L --> V[Check every quote<br/>against the PDF text]
-    V --> UI[Answer with page citations]
+    K --> S
+    S --> X[Cross-encoder rerank<br/>keep the best 5]
+    X --> L[Any chat provider answers<br/>from those passages, as JSON]
+    L --> V[Checks: JSON shape, quotes,<br/>numbers, negations]
+    V -->|pass| J[Optional accuracy judge]
+    V -->|fail| P[Hide answer, show passages]
+    J --> UI[Answer + page citations]
 ```
 
-Passages never cross a page boundary, which keeps every citation pointing at one exact page.
+**The answer contract.** The model must reply with JSON: an answer with `[n]` markers, a quote for each source, and a `coverage` of `full`, `partial` or `none`. "Partial" lets the model say "the documents give a rule, not the exact figure" without having to choose between a guess and a refusal.
+
+**The checks, in order:**
+1. **Shape:** malformed JSON gets one retry, then is refused.
+2. **Sources exist:** a marker like `[7]` must point at a passage the model was actually given.
+3. **Quotes are real:** each quote must be in its source. Models often quote loosely (joining pieces with "...", rebuilding table rows, skipping a sentence), so pieces are checked separately. A changed number, an added or dropped "not", or an invented phrase still fails.
+4. **Numbers are grounded:** every number in the answer must appear in a source the answer cites.
+5. **Judge (optional):** a second model checks that each claim matches its passages: the right number on the right claim, the right table row, the right condition.
+
+## Results
+
+All results use the fictional handbook, measured in November 2026. AI answers vary from run to run, so end-to-end scores are given as ranges.
+
+### Retrieval: which search finds the right page? (no AI calls, free to reproduce)
+
+`python eval/run_eval.py --retrieval-only` on the 26 answerable, non-follow-up questions, with `nomic-embed-text` embeddings and top 5 passages:
+
+| Search | Right page in top 5 | MRR (1.00 = always ranked first) |
+| --- | --- | --- |
+| Dense (meaning only) | 96% | 0.88 |
+| BM25 (keywords only) | 100% | 0.93 |
+| Hybrid (dense + BM25, RRF) | 100% | 0.90 |
+| Dense + rerank | 100% | 0.96 |
+| **Hybrid + rerank (default)** | **100%** | **0.96** |
+
+- Hybrid search fixed the one question dense search missed ("I'm a Director and I'm resigning…"), where the exact word "Director" matters.
+- Reranking moved the right page to rank 1 far more often.
+- BM25 alone does well here because this handbook is small and the questions reuse its wording. Hybrid is the default because real users often phrase things in words the documents don't use.
+
+### End to end: 35 hard questions
+
+`python eval/run_eval.py --provider ollama` (local `qwen3.6:35b-a3b`, `nomic-embed-text`, hybrid + rerank):
+
+| Check | Result |
+| --- | --- |
+| Fully correct (right facts and right page, or a correct refusal) | 34–35 / 35 across runs |
+| Right page found (Hit@5) / MRR | 100% / 0.97 |
+| Correct answers wrongly blocked by the checks | 0 |
+
+The 35 questions cover 7 categories: basic facts, exceptions hidden in tables, paraphrases ("my laptop got nicked"), exact terms, multi-part questions, follow-ups that need conversation history, and near-misses where the topic exists but the detail doesn't. GroqCloud (`gpt-oss-120b`) scored in the same range.
+
+### The accuracy judge
+
+`python eval/run_eval.py --provider ollama --judge groq --tamper` (answers from Ollama, judged by a different model on Groq):
+
+| Check | Result |
+| --- | --- |
+| Tampered answers caught (a number swapped for another from the same passage) | 33 / 33 |
+| Correct answers approved | 7 / 7 on the latest run (27 / 29 before tightening the judge's instructions) |
+
+A swapped number from the same passage is exactly the error the deterministic checks can't see, because the number *does* exist in the source.
 
 ## Run it locally
 
-You need Python 3.10 or newer and an OpenAI API key. An Anthropic API key is optional: add it to answer with Claude.
-
-**Windows (PowerShell)**
+You need Python 3.10 or newer. Pick any setup below; they can be combined.
 
 ```powershell
+# Windows (PowerShell)
 cd rag-chatbot
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env      # then open .env and paste your keys
+copy .env.example .env      # then open .env and fill in the setup you chose
 streamlit run app.py
 ```
-
-**macOS / Linux**
 
 ```bash
+# macOS / Linux
 cd rag-chatbot
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # then open .env and paste your keys
+cp .env.example .env        # then edit .env
 streamlit run app.py
 ```
 
-The app opens at http://localhost:8501.
+The app opens at http://localhost:8501. The reranker downloads a small model (about 80 MB) the first time.
 
-To work on the interface without API keys, set `RAG_OFFLINE_MODE=1` in `.env`. Answers then come from simple keyword matching, and the app shows a banner saying so.
+### Choose providers
+
+| Setup | Put in `.env` | Cost | Notes |
+| --- | --- | --- | --- |
+| **Fully local** | `OLLAMA_MODEL=<a model from ollama list>`<br>`EMBEDDING_PROVIDER=ollama` | Free | Install [Ollama](https://ollama.com), then `ollama pull nomic-embed-text`. Private; speed depends on your hardware. |
+| **Free cloud demo** | `GROQ_API_KEY=...`<br>`GEMINI_API_KEY=...`<br>`EMBEDDING_PROVIDER=gemini` | Free tiers | Groq answers fast; Gemini does search. Free tiers have daily limits, and Google may use free-tier data to improve its products: don't use real client documents. |
+| **Premium** | `OPENAI_API_KEY=...` and/or `ANTHROPIC_API_KEY=...` | Pay as you go | OpenAI covers search and answers; Claude answers only (Anthropic has no embeddings API). |
+| **No AI at all** | `RAG_OFFLINE_MODE=1` | Free | Keyword stand-ins for working on the interface and running tests. |
+
+Every provider with a key appears in the model picker. `CHAT_PROVIDER` chooses which comes first. Changing `EMBEDDING_PROVIDER` re-indexes the documents automatically.
 
 ## Deploy a live demo (free)
 
 1. Push this folder to a public GitHub repository. `.env` is in `.gitignore`, so your keys stay local.
 2. Go to [share.streamlit.io](https://share.streamlit.io), choose **Create app**, and pick your repository with `app.py` as the main file.
-3. Under **Advanced settings**, choose Python 3.12, and paste your keys into **Secrets** in this format (see `.streamlit/secrets.toml.example`):
+3. Under **Advanced settings**, choose Python 3.12, and paste your settings into **Secrets** (see `.streamlit/secrets.toml.example`). Ollama can't run there, so use the free cloud setup:
    ```toml
-   OPENAI_API_KEY = "sk-..."
-   ANTHROPIC_API_KEY = "sk-ant-..."
+   GROQ_API_KEY = "gsk_..."
+   GEMINI_API_KEY = "..."
+   EMBEDDING_PROVIDER = "gemini"
    REPO_URL = "https://github.com/your-name/rag-chatbot"
    ```
 4. Deploy, then put the app link at the top of this README.
 
-**Set a monthly spending limit** in your OpenAI and Anthropic dashboards before sharing the link. The app's own limits are a second line of defence.
+**Set spending limits** in your provider dashboards before sharing the link. The app's question and upload limits are a second line of defence.
 
 ## Evaluation
 
 ```bash
-python eval/run_eval.py                     # Claude if its key is set, otherwise OpenAI
-python eval/run_eval.py --provider openai
-python eval/run_eval.py --provider offline  # keyword baseline, no keys needed
+python eval/run_eval.py --provider ollama                     # full 35-question run
+python eval/run_eval.py --retrieval-only                      # compare search methods, no AI calls
+python eval/run_eval.py --provider groq --delay 3             # free tiers: pause between questions
+python eval/run_eval.py --provider ollama --category followup # one category only
+python eval/run_eval.py --provider ollama --judge groq --tamper  # test the accuracy judge
 ```
 
-The script asks the 15 questions in `eval/questions.json`, 12 with known answers and 3 that the handbook doesn't cover, then scores four checks:
-
-| Check | What it measures |
-| --- | --- |
-| Retrieval | The page with the answer is among the passages found |
-| Answer | The answer contains the expected facts, such as "24" or "31 March" |
-| Citation | The answer cites the correct page |
-| Refusal | Questions the handbook doesn't cover get "not found", not a guess |
-
-Results are written to `eval/results.md`.
+Other options: `--retrieval dense|bm25|hybrid`, `--rerank none|cross-encoder`. When an answer is blocked, the output shows the model's raw reply and the reason, so you can see whether the block was right. Reports are written to `eval/results.md` and `eval/ablation.md`.
 
 ## Tests
 
@@ -108,45 +164,69 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The 21 tests run without API keys. They cover page extraction, footer removal, chunking, quote checking, JSON parsing, refusals and follow-up rewriting.
+126 tests, no API keys needed: PDF handling, chunking, BM25 and rank fusion, reranking, every provider adapter (against fake clients), the citation checks (including real quotes the models gave that were once wrongly rejected), the judge, and the evaluation's own scoring rules. One test is marked as an expected failure: it documents a known limitation (below), and pytest will flag it if that limitation is ever fixed.
 
 ## Project structure
 
 ```
-app.py                      Streamlit interface
+app.py                       Streamlit interface
 rag/
-  documents.py              PDF loading, footer removal, page-bounded chunking
-  store.py                  Chroma vector store wrapper
-  providers.py              OpenAI embeddings, Claude and OpenAI chat
-  pipeline.py               Follow-up rewriting, retrieval, prompting
-  citations.py              JSON parsing and quote checking
-  offline.py                Keyword stand-ins for tests and offline mode
-  config.py                 Settings and limits from environment variables
-data/sample/                Sample handbook PDF (fictional company)
+  providers/                 One adapter per provider, behind a shared interface
+    base.py                  The contracts (Embedder, ChatModel) and error handling
+    registry.py              Picks providers from settings
+    openai_provider.py  anthropic_provider.py  gemini_provider.py
+    groq_provider.py    ollama_provider.py
+  documents.py               PDF loading, header/footer removal, page-bounded chunking
+  lexical.py                 BM25 keyword search and Reciprocal Rank Fusion
+  store.py                   Dense, BM25 and hybrid search
+  rerank.py                  Cross-encoder reranking
+  pipeline.py                Follow-up rewriting, retrieval, prompting, retry
+  citations.py               Answer parsing and the fail-closed checks
+  judge.py                   Accuracy judge and the tamper helper
+  offline.py                 Keyword stand-ins for tests and offline mode
+  config.py                  App settings and limits
+eval/                        35 questions, scoring script, reports
+tests/                       pytest suite
+data/sample/                 Sample handbook (fictional company)
 scripts/make_sample_handbook.py   Regenerates the sample PDF
-eval/                       Evaluation questions and scoring script
-tests/                      pytest suite
 ```
 
 ## Configuration
 
-All settings are environment variables. See `.env.example` for the full list.
+All settings are environment variables; `.env.example` lists every one with comments.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | (required) | Embeddings, and answers when OpenAI is picked |
-| `ANTHROPIC_API_KEY` | (optional) | Answers with Claude |
-| `CLAUDE_MODEL` | `claude-haiku-5-5` | Claude model for answers |
-| `OPENAI_MODEL` | `gpt-6.1-terra` | OpenAI model for answers |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | (none) | Turn on each cloud provider |
+| `OLLAMA_MODEL` | (none) | Turns on Ollama with this chat model |
+| `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` | first one set up / provider's default | Who indexes the documents |
+| `CHAT_PROVIDER` | (none) | Which provider is first in the picker |
+| `RETRIEVAL_MODE` | `hybrid` | `hybrid`, `dense` or `bm25` |
+| `RERANKER` / `RERANK_POOL` | `cross-encoder` / `20` | Reranking, and how many candidates it reorders |
+| `JUDGE` / `JUDGE_PROVIDER` / `JUDGE_ACTION` | `off` / same as chat / `warn` | Accuracy judge; `block` hides answers judged unsupported |
 | `TOP_K` | `5` | Passages sent to the model per question |
-| `MAX_QUESTIONS_PER_SESSION` | `25` | Questions per browser session |
-| `MAX_QUESTIONS_PER_DAY` | `300` | Questions per day across all visitors |
+| `MAX_QUESTIONS_PER_SESSION` / `MAX_QUESTIONS_PER_DAY` | `25` / `300` | Usage limits for a public demo |
 | `MAX_UPLOAD_FILES` / `MAX_UPLOAD_MB` / `MAX_UPLOAD_PAGES` | `3` / `10` / `80` | Upload limits |
 
-## Limits and next steps
+Per-provider models and options (`OPENAI_MODEL`, `GEMINI_MODEL`, `GROQ_MODEL`, `OLLAMA_THINK`, and so on) are documented in `.env.example`.
 
-- Scanned PDFs without a text layer are rejected with a message. Adding OCR would let them work.
-- Uploaded documents live in memory for the browser session only. A client version would store them in a persistent database such as Supabase pgvector, with a login.
-- Possible additions: hybrid keyword and vector search, reranking, streaming answers, and Word or web-page sources.
+## Known limitations
 
+Being clear about what the checks do and don't guarantee:
+
+- **Stitched quotes prove each piece exists, not that the pieces belong together.** Models often join parts of a passage with "..." or rebuild a table row in their own order. Each piece must be in the source, but the checks can't confirm they were joined correctly.
+- **Inside a table, a value swapped for another value from the same table can pass the quote and number checks.** This is documented as an expected-failure test. The accuracy judge catches this kind of error (33/33 in the tamper test), but it's optional and is a model itself.
+- **The judge is a model and can be wrong,** and it's more lenient when judging its own answers. Use a different provider for judging, and treat its verdict as a strong signal, not proof.
+- **Answers sometimes address a related question.** For example, "What's the stock price?" can get "the documents don't give one; Brightleaf doesn't offer stock options." A relevance check in the judge is a natural next step.
+- **Calculated numbers are blocked.** "12 months × $40 = $480" is refused because 480 isn't in the source.
+- **The benchmark is small.** 35 questions on one 16-page fictional handbook. With so few passages, reranking 20 candidates covers about half the document, which flatters the rerank results. Results on large real document sets will differ.
+- **Uploads live in memory for one browser session.** There are no user accounts. A client deployment would need login, per-user document storage and deletion before accepting private files.
+- **Scanned PDFs without a text layer** are rejected. OCR would let them work.
+- **Uploaded text is sent to the chosen AI provider** unless you use Ollama. Check each provider's data-retention terms before using real documents.
+
+## What's next
+
+- A relevance check in the judge ("does this answer the question asked?").
+- Persistent per-user storage with login (e.g. Postgres with pgvector).
+- A React front end on top of the same `rag/` engine; the engine has no Streamlit code in it.
+- Streaming answers, OCR for scanned PDFs, and Word or web-page sources.
