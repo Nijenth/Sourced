@@ -80,7 +80,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: npm ci
         working-directory: frontend
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium || npx playwright install chromium
         working-directory: frontend
       - name: Widget page events (stubbed API)
         run: npx playwright test widget-events.spec.ts
