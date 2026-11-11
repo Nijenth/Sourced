@@ -1,4 +1,4 @@
-"""DocChat: chat with your PDFs, with the page and exact passage behind every answer.
+"""Sourced: chat with your PDFs, with the page and exact passage behind every answer.
 
 Run locally:  streamlit run app.py
 """
@@ -53,7 +53,7 @@ SAMPLE_QUESTIONS = [
 MODE_SAMPLE = "Sample HR handbook"
 MODE_UPLOAD = "Upload your own PDFs"
 
-st.set_page_config(page_title="DocChat: chat with your documents", page_icon="📄", layout="centered")
+st.set_page_config(page_title="Sourced · chat with your documents", page_icon="📄", layout="centered")
 st.markdown(
     """
     <style>
@@ -362,7 +362,7 @@ with st.sidebar:
         )
         st.download_button("Download the handbook (PDF)", SAMPLE_PDF.read_bytes(), SAMPLE_PDF.name, "application/pdf")
         if not settings.allow_uploads:
-            st.caption("This public demo uses the fictional handbook only. Run DocChat yourself to use your own PDFs.")
+            st.caption("This public demo uses the fictional handbook only. Run Sourced yourself to use your own PDFs.")
         try:
             store = sample_store(embedder.name, embedder)
         except ProviderError as exc:

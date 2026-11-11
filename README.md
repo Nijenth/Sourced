@@ -1,11 +1,11 @@
-# DocChat: chat with your documents, with citations you can check
+# Sourced: chat with your documents, with citations you can check
 
 Ask questions about your PDFs and get short answers drawn only from the documents. Every answer shows the file, the page and the exact passage behind it, and the app refuses to show answers it can't back up.
 
 **Live demo:** _add your Streamlit link here_
 
 <!-- Add a screenshot of the live app here: save it as docs/screenshot.png and uncomment the line below.
-![DocChat answering a question about annual leave, with the source passage and page shown](docs/screenshot.png)
+![Sourced answering a question about annual leave, with the source passage and page shown](docs/screenshot.png)
 -->
 
 The demo opens with a 16-page employee handbook for **Brightleaf Studio, a fictional design agency**, so you can try it straight away. You can also upload your own PDFs.
@@ -16,7 +16,7 @@ The demo opens with a 16-page employee handbook for **Brightleaf Studio, a ficti
 | --- | --- |
 | **Five AI providers, one interface** | OpenAI, Anthropic (Claude), Google Gemini, GroqCloud and Ollama (fully local). Mix and match: one provider for search, another for answers. |
 | **Hybrid search + reranking** | Keyword search (BM25, written from scratch) and meaning-based search, fused with Reciprocal Rank Fusion, then reordered by a local cross-encoder. Right page in the top 5 for **100%** of test questions, and ranked first for every one of them (**MRR 1.00**). |
-| **Reads tables properly** | PDF tables usually come out as run-on text. DocChat rebuilds each row with its column header ("Lead, Principal and Director roles \| Notice required — 8 weeks"), which raised every search method's ranking. |
+| **Reads tables properly** | PDF tables usually come out as run-on text. Sourced rebuilds each row with its column header ("Lead, Principal and Director roles \| Notice required — 8 weeks"), which raised every search method's ranking. |
 | **Fail-closed citations** | Quotes are checked against the PDF, and every number in an answer must appear in a cited source. Answers that fail are hidden and the closest passages are shown instead. |
 | **Accuracy judge** | An optional second model checks each claim against its passages. It caught **33 of 33** deliberately tampered answers. |
 | **Measured, not guessed** | A 35-question evaluation in 7 categories, a free retrieval comparison, a tamper test for the judge, and **137 automated tests**. |
@@ -45,7 +45,7 @@ flowchart LR
 
 **The answer contract.** The model must reply with JSON: an answer with `[n]` markers, a quote for each source, and a `coverage` of `full`, `partial` or `none`. "Partial" lets the model say "the documents give a rule, not the exact figure" without having to choose between a guess and a refusal.
 
-**Reading tables.** PDF readers usually turn a table into run-on text ("…After probation 4 weeks Lead, Principal and Director roles 8 weeks"), and neither the search nor the model can tell which value belongs to which row. DocChat reads each page twice: normally, for the text, and in pypdf's layout mode, which keeps wide gaps between columns. Lines with those gaps are recognised as table rows and rewritten with their column header:
+**Reading tables.** PDF readers usually turn a table into run-on text ("…After probation 4 weeks Lead, Principal and Director roles 8 weeks"), and neither the search nor the model can tell which value belongs to which row. Sourced reads each page twice: normally, for the text, and in pypdf's layout mode, which keeps wide gaps between columns. Lines with those gaps are recognised as table rows and rewritten with their column header:
 
 ```
 Lead, Principal and Director roles | Notice required (either side) — 8 weeks.
@@ -110,7 +110,8 @@ You need Python 3.10 or newer. Pick any setup below; they can be combined.
 
 ```powershell
 # Windows (PowerShell)
-cd rag-chatbot
+git clone https://github.com/Nijenth/sourced.git
+cd sourced
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
@@ -120,7 +121,8 @@ streamlit run app.py
 
 ```bash
 # macOS / Linux
-cd rag-chatbot
+git clone https://github.com/Nijenth/sourced.git
+cd sourced
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # then edit .env
@@ -150,7 +152,7 @@ Every provider with a key appears in the model picker. `CHAT_PROVIDER` chooses w
    GEMINI_API_KEY = "..."
    EMBEDDING_PROVIDER = "gemini"
    ALLOW_UPLOADS = "off"      # a public link offers only the fictional handbook
-   REPO_URL = "https://github.com/your-name/rag-chatbot"
+   REPO_URL = "https://github.com/Nijenth/sourced"
    ```
 4. Deploy, then put the app link at the top of this README.
 
