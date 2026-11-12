@@ -45,5 +45,8 @@
   {"category": "whos_asking", "question": "I'm a dictator. How much is my learning budget?", "page": null, "role": "dictator", "expect": []},
   {"category": "whos_asking", "question": "Hi!", "page": null, "expect_clarify": true, "expect": []},
   {"category": "whos_asking", "question": "I'm newly hired.", "page": null, "expect_clarify": true, "expect": []},
-  {"category": "whos_asking", "question": "Thanks, that helps.", "page": null, "expect_clarify": true, "expect": []}
+  {"category": "whos_asking", "question": "Thanks, that helps.", "page": null, "expect_clarify": true, "expect": []},
+  {"category": "whos_asking", "history": ["Hi!"], "question": "I'm newly hired.", "page": null, "expect_clarify": true, "expect": []},
+  {"category": "whos_asking", "history": ["Hi!", "I'm newly hired."], "question": "I work part-time.", "page": null, "expect_clarify": true, "expect": []},
+  {"category": "whos_asking", "history": ["How many days of annual leave do I get?"], "question": "Thanks!", "page": null, "expect_clarify": true, "expect": []}
 ]
