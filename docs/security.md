@@ -2,7 +2,7 @@
 
 ## How Sourced was reviewed
 
-Three read-only reviews by an AI coding agent (OpenAI Codex), each reading the code, tests and installed
+Read-only reviews by an AI coding agent (OpenAI Codex), each reading the code, tests and installed
 libraries without running anything or using the network:
 
 | Review | Revision | Findings |
@@ -10,11 +10,12 @@ libraries without running anything or using the network:
 | Full audit | `9e505ca` | S01–S12 |
 | Re-audit of the fixes | `3f2a5a1` | N01–N05 |
 | Review after PR #15 | `dfe3ffb` | N06–N09 |
+| Scoped check of N06–N09 | `56e43b5` | N08 and N09 follow-ups |
 
 No human security professional has reviewed Sourced. Fixes were made by Claude (Anthropic's AI) and checked by
 running the test suite locally against Postgres 16 with pgvector; for each fix, the matching test was also run with
-the fix removed and failed. GitHub Actions runs the same tests on every pull request, including the browser
-checks below.
+the fix removed and failed. GitHub Actions runs the same tests, including the browser checks below, on every push to `main` and on
+every pull request that changes code (pull requests that only change documentation or deploy settings skip them).
 
 ## Findings
 
@@ -39,8 +40,8 @@ checks below.
 | N05 | Some new error responses lacked cross-origin headers | Partly fixed: dashboard 413s and widget preview errors carry them. A public chat request over 64 KB gets a 413 without them; the widget never sends one that large. | `main.py`, `public.py`; `test_reaudit.py` |
 | N06 | An upload could be saved after its session was revoked | Fixed: the upload takes the admission lock first, then re-checks and share-locks the sign-in until it's saved | `documents.py`, `auth.py` (`current_member`); `test_reaudit.py` |
 | N07 | A database call could run on the event loop | Fixed: the sign-in transaction ends in a worker thread | `documents.py` (`release_transaction`); `test_reaudit.py` |
-| N08 | Word joiners missed some addresses and changed copied text | Fixed: untrusted text is shown as escaped plain text with `show()`; labels that Streamlit parses are fixed | `app.py`; `frontend/e2e/streamlit-text.spec.ts` (Chromium, runs in CI) checks the real `render_answer` |
-| N09 | This page overstated the evidence | Fixed: this version | |
+| N08 | Word joiners missed some addresses and changed copied text | Fixed: untrusted text is shown as escaped plain text with `show()`, keeping every space and line break; labels that Streamlit parses are fixed | `app.py`; `frontend/e2e/streamlit-text.spec.ts` (Chromium, runs in CI) checks the real `render_answer`, including spacing and the selected (copied) text |
+| N09 | This page overstated the evidence | Fixed: this version; a fourth, scoped check at `56e43b5` confirmed N06 and N07 fixed and found no new High or Medium issues | |
 
 **Scope today:** the public demo uses a fictional handbook. Before a client's confidential documents, settle
 S05, S07, S09 and S12 for that deployment.

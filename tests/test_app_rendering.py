@@ -82,7 +82,7 @@ def test_show_passes_untrusted_text_as_escaped_plain_text():
         APP_PARTS["show"]('Visit https://evil.example <img src=x onerror=alert(1)> **bold** & "quotes"\nnext', kind)
         body, = st.calls
         assert "<img" not in body and "&lt;img src=x onerror=alert(1)&gt;" in body
-        assert "**bold** &amp; &quot;quotes&quot;<br>next" in body
+        assert "**bold** &amp; &quot;quotes&quot;\nnext" in body and "white-space:pre-wrap" in body
         assert "\u2060" not in body  # the exact characters, nothing added
 
 
