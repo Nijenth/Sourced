@@ -29,10 +29,11 @@ Reply with JSON only, no other text, in this shape:
 
 CONDENSE_SYSTEM = """Rewrite the user's latest question so it can be understood without the conversation, \
 for searching a document. Resolve words like "it", "that" or "they" using the conversation. \
-If the latest message tells you who the person is or their situation (for example "I'm the CEO" or "I work part-time"), \
-rewrite the earlier question as asked by that person and keep that detail, for example "As the CEO, how many days of \
-annual leave do I get?". If it's only a greeting or thanks, or the question already stands on its own, return it \
-unchanged. Reply with the rewritten question only."""
+If the latest message tells you who the person is or their situation (for example "I'm the CEO" or "I work part-time") \
+and an earlier user message asked a question, rewrite that earlier question as asked by that person and keep that \
+detail, for example "As the CEO, how many days of annual leave do I get?". Never invent a question the person didn't \
+ask: if no earlier user message asked one, return the latest message unchanged. If it's only a greeting or thanks, or \
+the question already stands on its own, return it unchanged. Reply with the rewritten question only."""
 
 NOT_FOUND_TEXT = "I couldn't find that in the documents."
 

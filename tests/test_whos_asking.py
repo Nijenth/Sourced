@@ -124,3 +124,8 @@ def test_helpers():
 
 def test_instructions_ask_for_the_asker():
     assert '"asker"' in ANSWER_SYSTEM and '"asker"' in REPAIR_PROMPT
+
+
+def test_rewrite_step_never_invents_a_question():
+    assert "Never invent a question" in CONDENSE_SYSTEM
+    assert "an earlier user message asked a question" in CONDENSE_SYSTEM
