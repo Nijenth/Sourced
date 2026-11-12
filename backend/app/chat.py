@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from threading import Lock
 
-from rag.citations import ANSWERED, BLOCKED_TEXT, INVALID_OUTPUT, UNVERIFIED, Answer, snippet
+from rag.citations import ANSWERED, Answer, BLOCKED_TEXT, CLARIFY_TEXT, INVALID_OUTPUT, UNVERIFIED, snippet
 from rag.config import Settings
 from rag.documents import chunk_pages, load_pdf
 from rag.judge import Judge
@@ -110,10 +110,13 @@ def to_response(answer: Answer, question: str) -> ChatResponse:
     answered = answer.status == ANSWERED
     blocked = answer.status in BLOCK_REASONS
     text = NOT_FOUND_TEXT
+    clarify = bool(getattr(answer, "clarify", False)) and answer.status == "not_found"
     if answered:
         text = answer.text
     elif blocked:
         text = BLOCKED_TEXT
+    elif clarify:
+        text = CLARIFY_TEXT
     judgement = None
     if answer.judgement is not None:
         # A judge can quote the original answer in its findings.
@@ -140,6 +143,7 @@ def to_response(answer: Answer, question: str) -> ChatResponse:
         status=answer.status,
         text=text,
         partial=answered and answer.partial,
+        clarify=clarify,
         searched_for=searched_for,
         reason=BLOCK_REASONS.get(answer.status, ""),
         citations=citations,

@@ -39,5 +39,11 @@
 
   {"category": "near_miss", "question": "What is the name of Brightleaf's dental insurance provider?", "page": null, "expect": []},
   {"category": "near_miss", "question": "How many vacation days do interns get?", "page": null, "expect": []},
-  {"category": "near_miss", "question": "What time does the Austin studio open on Saturdays?", "page": null, "expect": []}
+  {"category": "near_miss", "question": "What time does the Austin studio open on Saturdays?", "page": null, "expect": []},
+  {"category": "whos_asking", "history": ["How many days of annual leave do I get?"], "question": "I'm the CEO.", "page": null, "role": "CEO", "expect": []},
+  {"category": "whos_asking", "question": "As the CEO, how many days of annual leave do I get?", "page": null, "role": "CEO", "expect": []},
+  {"category": "whos_asking", "question": "I'm a dictator. How much is my learning budget?", "page": null, "role": "dictator", "expect": []},
+  {"category": "whos_asking", "question": "Hi!", "page": null, "expect_clarify": true, "expect": []},
+  {"category": "whos_asking", "question": "I'm newly hired.", "page": null, "expect_clarify": true, "expect": []},
+  {"category": "whos_asking", "question": "Thanks, that helps.", "page": null, "expect_clarify": true, "expect": []}
 ]

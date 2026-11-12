@@ -136,7 +136,8 @@ export function Ask() {
       const answer = await post<Answer>('/chat', { question: text, provider: selectedProvider, history })
       setTurns((previous) => [...previous, { question: text, answer }])
       setAnnouncement(answer.status === 'answered' ? 'Answer received.' :
-        answer.status === 'not_found' ? 'No answer found in the documents.' : 'The answer could not be verified.')
+        answer.clarify ? 'The assistant asked what you would like to know.'
+          : answer.status === 'not_found' ? 'No answer found in the documents.' : 'The answer could not be verified.')
     } catch (err) {
       setQuestion((current) => current || text)
       setError(errorMessage(err))

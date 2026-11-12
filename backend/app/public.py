@@ -179,6 +179,9 @@ def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, 
                 )
             if answer.judgement:
                 answer.judgement.problems = []
+        elif answer.clarify:
+            # A greeting or statement: invite a question; the "can't help" contact line doesn't fit here.
+            answer = ChatResponse(status="not_found", text=answer.text, clarify=True)
         else:
             answer = ChatResponse(
                 status=answer.status, text=NOT_FOUND_TEXT if answer.status == "not_found" else BLOCKED,
