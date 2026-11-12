@@ -22,6 +22,8 @@ SESSION_SECONDS = 15 * 60
 SECRET_KEY = re.compile(r"sk_[A-Za-z0-9_-]{43}")
 SESSION_TOKEN = re.compile(r"st_([A-Za-z0-9_-]{1,2048})\.([0-9a-f]{64})")
 ACCESS_CREDENTIAL = re.compile(r"(?:sk_[A-Za-z0-9_-]{43}|st_[A-Za-z0-9_-]+\.[a-f0-9]{64})")
+# A page preview's URL is itself a short-lived signed grant (security audit S08).
+PREVIEW_GRANT = re.compile(r"(/previews/)[^/?#]+(\.png)")
 
 
 class SessionRequest(BaseModel):
@@ -108,5 +110,6 @@ class RedactAccessCredentials(logging.Filter):
                 # The normal fragment and Authorization header never reach the request target.
                 if ACCESS_CREDENTIAL.search(unquote(target)):
                     target = ACCESS_CREDENTIAL.sub("[redacted]", unquote(target.split("?", 1)[0]))
+                target = PREVIEW_GRANT.sub(r"\1[redacted]\2", target)
                 record.args = (address, method, target, protocol, status)
         return True

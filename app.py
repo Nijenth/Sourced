@@ -128,9 +128,16 @@ def render_page(doc_hash: str, page: int, _data: bytes) -> bytes:
 
 # ---------- helpers -----------------------------------------------------------------------
 
+_MARKDOWN_PUNCTUATION = re.compile(r"([!-/:-@\[-`{-~])")
+
+JUDGE_BLOCK_REASON = "An accuracy check found claims the passages don't support."
+
+
 def md_escape(text: str) -> str:
-    """Stop Streamlit from reading dollar amounts as LaTeX math."""
-    return text.replace("$", "\\$")
+    """Show text exactly as written. Streamlit reads Markdown everywhere, so a document or the model could
+    otherwise add links, images or formatting (and "$" would start LaTeX math). Backslash-escaping every ASCII
+    punctuation mark is valid Markdown and renders as the plain character."""
+    return _MARKDOWN_PUNCTUATION.sub(r"\\\1", str(text))
 
 
 def take_daily_slot() -> bool:
@@ -220,9 +227,9 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
         return
     if msg.get("status") in ("unverified", "invalid_output"):
         if msg.get("reason"):
-            st.caption(f"Why: {msg['reason']}")
+            st.caption(f"Why: {md_escape(msg['reason'])}")
         for i, p in enumerate(msg.get("passages", []), 1):
-            with st.expander(f"{p['source']} · page {p['page']}"):
+            with st.expander(f"{md_escape(p['source'])} · page {p['page']}"):
                 st.markdown("> " + md_escape(p["text"]))
                 data = files.get(p["source"])
                 if data and st.toggle("Show the page", key=f"passage-{idx}-{i}"):
@@ -257,7 +264,7 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
         return
     st.caption("Sources")
     for c in citations:
-        with st.expander(f"[{c['number']}]  {c['source']} · page {c['page']}"):
+        with st.expander(f"\\[{c['number']}\\]  {md_escape(c['source'])} · page {c['page']}"):
             st.markdown("> " + md_escape(c["quote"]))
             if not c["verified"]:
                 st.caption("Closest passage on this page. The model's quote didn't match the text word for word.")
@@ -297,7 +304,8 @@ def answer_to_message(answer, question: str = "") -> dict:
         if answer.judgement
         else None,
         "status": answer.status,
-        "reason": answer.reason,
+        # A blocked answer's accuracy-check reason quotes the rejected claims; show a fixed one instead.
+        "reason": JUDGE_BLOCK_REASON if answer.judgement and answer.status in (UNVERIFIED, INVALID_OUTPUT) else answer.reason,
         "passages": [
             {"source": h.chunk.source, "page": h.chunk.page, "text": snippet(h.chunk.text)} for h in answer.hits[:3]
         ]
@@ -389,7 +397,7 @@ with st.sidebar:
                         s, fs, warns = None, {}, [str(exc)]
                 ss.upload.update(store=s, files=fs, warnings=warns)
         for w in ss.upload["warnings"]:
-            st.warning(w)
+            st.warning(md_escape(w))
         store, files = ss.upload["store"], ss.upload["files"]
         if store is not None:
             st.success(f"Indexed {len(files)} file(s), {sum(store.sources.values())} pages.")
