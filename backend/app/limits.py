@@ -97,4 +97,3 @@ async def reject(send) -> None:
         (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()), (b"connection", b"close"),
     ]})
     await send({"type": "http.response.body", "body": body})
-

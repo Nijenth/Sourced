@@ -128,9 +128,10 @@ class DashboardCors:
         await handler(scope, receive, send)
 
 
-app.add_middleware(DashboardCors)
-# Before any route reads a body (security audit S01).
+# Before any route reads a body (security audit S01). Inside DashboardCors, so a separately hosted dashboard
+# can still read a 413 (audit N05).
 app.add_middleware(BodySizeLimit)
+app.add_middleware(DashboardCors)
 # Added last so it wraps everything, including CORS responses.
 app.add_middleware(RequestIdMiddleware)
 app.add_exception_handler(CodedHTTPException, coded_error)

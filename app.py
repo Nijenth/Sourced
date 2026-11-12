@@ -133,11 +133,21 @@ _MARKDOWN_PUNCTUATION = re.compile(r"([!-/:-@\[-`{-~])")
 JUDGE_BLOCK_REASON = "An accuracy check found claims the passages don't support."
 
 
+# Streamlit also turns bare web and email addresses into links after Markdown is parsed, so escaping alone
+# doesn't stop them. An invisible word joiner (U+2060) inside each address breaks that detection.
+_WORD_JOINER = "\u2060"
+_LINK_SCHEME = re.compile(r"(?i)\b(https?|ftp|mailto|xmpp)(?=:)")
+_WWW = re.compile(r"(?i)\b(www)(?=\.)")
+
+
 def md_escape(text: str) -> str:
     """Show text exactly as written. Streamlit reads Markdown everywhere, so a document or the model could
     otherwise add links, images or formatting (and "$" would start LaTeX math). Backslash-escaping every ASCII
-    punctuation mark is valid Markdown and renders as the plain character."""
-    return _MARKDOWN_PUNCTUATION.sub(r"\\\1", str(text))
+    punctuation mark is valid Markdown and renders as the plain character; the word joiners stop Streamlit
+    from linking addresses it finds in the text."""
+    text = _LINK_SCHEME.sub(lambda m: m.group(1) + _WORD_JOINER, str(text))
+    text = _WWW.sub(lambda m: m.group(1) + _WORD_JOINER, text).replace("@", _WORD_JOINER + "@")
+    return _MARKDOWN_PUNCTUATION.sub(r"\\\1", text)
 
 
 def take_daily_slot() -> bool:
