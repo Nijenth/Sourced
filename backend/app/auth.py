@@ -159,8 +159,18 @@ def login(body: Credentials, request: Request, db: Db, response: Response) -> Me
     except VerifyMismatchError:
         raise invalid from None
     member = Member(id=user.id, email=user.email, workspace_id=workspace.id, workspace_name=workspace.name, role=role)
+    verified_hash = user.password_hash
     forgive_login(db, attempt)
-    user = db.get(User, member.id)
+    # Lock the account and confirm the password is still current before creating the session: if it was
+    # changed since it was checked above, sessions are being revoked and this one mustn't slip through (N04).
+    user = db.scalar(select(User).where(User.id == member.id).with_for_update())
+    if user is None:
+        raise invalid
+    if user.password_hash != verified_hash:
+        try:
+            passwords.verify(user.password_hash, password)
+        except VerifyMismatchError:
+            raise invalid from None
     if passwords.check_needs_rehash(user.password_hash):
         user.password_hash = passwords.hash(password)
     return issue_session(db, response, member)

@@ -249,16 +249,27 @@ def preview_preflight(signed_id: str, request: Request, db: Db) -> Response:
 
 @api.get("/previews/{signed_id}.png")
 def preview(signed_id: str, request: Request, db: Db) -> Response:
-    widget, document_id, page, origin, binding = preview_grant(signed_id, request, db)
-    if binding is not None:
-        try:
+    granted: dict = {}
+
+    def authorize():
+        widget, document_id, page, origin, binding = preview_grant(signed_id, request, db)
+        granted["origin"] = origin
+        if binding is not None:
             session = PresentedSession.parse(bearer(request))
             if not hmac.compare_digest(session.verify(request.state.channels.preview_secret, widget), binding):
                 raise unauthorized()
-        except HTTPException as exc:
-            exc.headers = {**cors(origin), **(exc.headers or {})}
-            raise
-    png = page_png(db, widget.workspace_id, document_id, page, request.state.document_limits.timeout)
+        return widget, document_id, page, origin
+
+    try:
+        widget, document_id, page, origin = authorize()
+        png = page_png(db, widget.workspace_id, document_id, page, request.state.document_limits.timeout)
+        # Drawing a new page releases the database connection; the grant must still hold afterwards (audit N01).
+        authorize()
+    except HTTPException as exc:
+        # Allowed origins can read the error (for example a retryable 503 pdf_busy), as with success (audit N05).
+        if "origin" in granted:
+            exc.headers = {**cors(granted["origin"]), **(exc.headers or {})}
+        raise
     return Response(png, media_type="image/png", headers={**cors(origin), "Referrer-Policy": "no-referrer"})
 
 
