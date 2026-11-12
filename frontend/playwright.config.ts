@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'streamlit-text.spec.ts', // has its own config: playwright.streamlit.config.ts
   timeout: 60_000,
   use: { ...devices['Desktop Chrome'], baseURL: 'https://127.0.0.1:4173', ignoreHTTPSErrors: true },
   webServer: {

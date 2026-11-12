@@ -18,7 +18,7 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 
 from rag.providers import PROVIDERS, embedding_provider_name
 
-from .auth import CurrentMember, VerifiedMember, get_member
+from .auth import CurrentMember, VerifiedMember, current_member, get_member
 from .db import Db
 from .db.models import Document, DocumentFile, PagePreview
 from .errors import CodedHTTPException
@@ -74,15 +74,21 @@ def enqueue_document(db: Db, workspace_id: UUID, filename: str, data: bytes, pag
     return document.id
 
 
-async def read_upload(request: Request, db: Db, _member: VerifiedMember) -> tuple[str, bytes]:
+def release_transaction(db: Db, _member: VerifiedMember) -> None:
+    """End the sign-in check's transaction so no database connection is held while the file arrives (review N01).
+    A plain function: FastAPI runs it in a worker thread, so a slow database can't stall the event loop (N07).
+    The upload route checks the sign-in again before saving anything."""
+    db.rollback()
+
+
+async def read_upload(request: Request, _released: Annotated[None, Depends(release_transaction)]) -> tuple[str, bytes]:
     max_bytes = request.state.document_limits.bytes
     if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "multipart/form-data":
         raise HTTPException(415, "Upload the PDF as multipart/form-data.")
-    # Hand the database connection back while the file arrives: a slow upload must not hold one (audit N01).
-    # The upload route checks the sign-in again before saving anything.
-    db.rollback()
+    # One deadline for the whole upload, so a trickling connection can't keep a request open indefinitely.
+    # The default of 180 s needs about 0.5 Mbit/s for a 10 MB PDF.
     try:
-        async with asyncio.timeout(positive_int("SOURCED_UPLOAD_READ_SECONDS", 60)):
+        async with asyncio.timeout(positive_int("SOURCED_UPLOAD_READ_SECONDS", 180)):
             return await _read_pdf_form(request, max_bytes)
     except TimeoutError:
         raise HTTPException(408, "The upload took too long to arrive. Try again.", {"Connection": "close"}) from None
@@ -128,8 +134,7 @@ async def _read_pdf_form(request: Request, max_bytes: int) -> tuple[str, bytes]:
     }}}}},
 )
 def upload_document(
-    request: Request, response: Response, db: Db, member: VerifiedMember,
-    upload: Annotated[tuple[str, bytes], Depends(read_upload)],
+    request: Request, db: Db, member: VerifiedMember, upload: Annotated[tuple[str, bytes], Depends(read_upload)],
 ) -> QueuedDocument:
     filename, data = upload
     limits = request.state.document_limits
@@ -142,25 +147,31 @@ def upload_document(
         raise pdf_failure(exc, str(exc)) from None
     if not 1 <= pages <= limits.pages:
         raise HTTPException(422, f"Upload a PDF with 1 to {limits.pages} pages.")
-    # The final decision runs in a fresh READ COMMITTED transaction under an advisory lock, so it sees every
-    # upload committed before it and simultaneous uploads can't all squeeze past the limits (audit N02).
+    # The final decision runs in a fresh READ COMMITTED transaction (review N02). In order:
+    # 1. the advisory lock, so simultaneous uploads decide one at a time and each sees the ones before it;
+    # 2. the sign-in, checked now and share-locked until commit, so it can't be revoked mid-save (N06);
+    # 3. the limits.
     db.connection(execution_options={"isolation_level": "READ COMMITTED"})
-    if get_member(request, response, db).workspace_id != member.workspace_id:  # still signed in, still admin
+    lock_upload_admission(db)
+    if current_member(request, db, lock=True).workspace_id != member.workspace_id:
         raise HTTPException(401, "Sign in to Sourced.")
-    admit_upload(db, member.workspace_id, len(data), quota, lock=True)
+    admit_upload(db, member.workspace_id, len(data), quota)
     result = QueuedDocument(id=enqueue_document(db, member.workspace_id, filename, data, pages))
     db.commit()
     return result
 
 
-def admit_upload(db: Db, workspace_id: UUID, size: int, quota: UploadQuota, lock: bool = False) -> None:
+def lock_upload_admission(db: Db) -> None:
+    """Held until the transaction ends: one upload admission decision at a time, across the server."""
+    db.execute(select(func.pg_advisory_xact_lock(UPLOAD_ADMISSION_LOCK)))
+
+
+def admit_upload(db: Db, workspace_id: UUID, size: int, quota: UploadQuota) -> None:
     """Refuse an upload that would take the workspace or the server past its limits (security audit S02).
 
     This governs uploads from workspace admins. The demo seed and re-indexing after an embedding-model change
     are operator actions and don't pass through it. Storage counts the stored PDFs, not derived text,
     vectors or page pictures."""
-    if lock:
-        db.execute(select(func.pg_advisory_xact_lock(UPLOAD_ADMISSION_LOCK)))
     documents, stored, pending = db.execute(
         select(
             func.count(Document.id),

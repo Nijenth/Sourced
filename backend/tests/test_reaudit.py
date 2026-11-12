@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from uuid import uuid4
@@ -9,10 +10,11 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.orm import Session
 from starlette.datastructures import Headers
 
-from backend.app import auth, documents, pdf_tasks
+from backend.app import auth, documents, main, pdf_tasks
 from backend.app.chat import to_response
 from backend.app.db import get_db
 from backend.app.db.models import Document, PagePreview, WidgetDocument
@@ -155,32 +157,83 @@ def test_an_upload_that_arrives_too_slowly_is_cut_off(monkeypatch):
             await asyncio.sleep(5)
             yield b""
 
-    rolled_back = []
-    db = SimpleNamespace(rollback=lambda: rolled_back.append(True))
     with pytest.raises(HTTPException) as refused:
-        asyncio.run(documents.read_upload(SlowRequest(), db, None))
-    assert refused.value.status_code == 408 and rolled_back == [True]
+        asyncio.run(documents.read_upload(SlowRequest(), None))
+    assert refused.value.status_code == 408
 
 
-# N02 · the final quota decision really is serialized, even when both uploads reach it together.
+# N07 · ending the sign-in transaction never runs on the event loop.
 
-def test_uploads_that_reach_the_final_check_together_cannot_both_pass(workspace_client, sessions, monkeypatch):
+def test_upload_rollbacks_never_run_on_the_event_loop(workspace_client, sessions, monkeypatch):
+    signup(workspace_client, "alpha")
+    on_loop = []
+    real_rollback = Session.rollback
+
+    def rollback(self):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return real_rollback(self)
+
+    monkeypatch.setattr(Session, "rollback", rollback)
+    queue(workspace_client, PDF)
+    assert on_loop and not any(on_loop)
+
+
+# N02 · the final quota decision really is serialized, even when both uploads reach it together, and even if the
+# database's default isolation is stricter than READ COMMITTED.
+
+def race_two_uploads(workspace_client, monkeypatch):
     quota(monkeypatch, documents=1)
     signup(workspace_client, "alpha")
     together = threading.Barrier(2, timeout=30)
-    real_admit = documents.admit_upload
+    real_lock = documents.lock_upload_admission
 
-    def admit(db, workspace_id, size, limits, lock=False):
-        if lock:
-            together.wait()  # both requests passed the early check and now decide at the same moment
-        return real_admit(db, workspace_id, size, limits, lock)
+    def lock(db):
+        together.wait()  # both requests passed the early check and now ask for the lock at the same moment
+        return real_lock(db)
 
-    monkeypatch.setattr(documents, "admit_upload", admit)
+    monkeypatch.setattr(documents, "lock_upload_admission", lock)
     with TestClient(app, base_url="https://sourced.example") as second:
         assert second.post(f"{API}/auth/login", json={"email": "alpha@example.com", "password": PASSWORD}).status_code == 200
         with ThreadPoolExecutor(2) as pool:
-            codes = sorted(pool.map(lambda browser: upload(browser, PDF).status_code, [workspace_client, second]))
-    assert codes == [202, 409]
+            return sorted(pool.map(lambda browser: upload(browser, PDF).status_code, [workspace_client, second]))
+
+
+def test_uploads_that_reach_the_final_check_together_cannot_both_pass(workspace_client, sessions, monkeypatch):
+    assert race_two_uploads(workspace_client, monkeypatch) == [202, 409]
+
+
+def test_the_race_holds_when_the_database_default_is_repeatable_read(sessions, monkeypatch):
+    real_engine = main.database_engine
+    monkeypatch.setattr(main, "database_engine", lambda: real_engine().execution_options(isolation_level="REPEATABLE READ"))
+    with TestClient(app, base_url="https://sourced.example") as browser:
+        assert race_two_uploads(browser, monkeypatch) == [202, 409]
+
+
+# N06 · an upload waiting for the admission lock is refused if its sign-in ends meanwhile.
+
+def test_an_upload_is_not_saved_if_its_session_is_revoked_while_it_waits(workspace_client, sessions, monkeypatch):
+    signup(workspace_client, "alpha")
+    with sessions() as holder:
+        holder.execute(select(func.pg_advisory_xact_lock(documents.UPLOAD_ADMISSION_LOCK)))  # someone else is deciding
+        with ThreadPoolExecutor(1) as pool:
+            pending = pool.submit(upload, workspace_client, PDF)
+            deadline = time.monotonic() + 30
+            with sessions() as watcher:
+                while not watcher.scalar(select(func.count()).select_from(text("pg_locks")).where(
+                    text("locktype = 'advisory' AND NOT granted"))):
+                    assert time.monotonic() < deadline, "The upload never reached the admission lock."
+                    time.sleep(0.05)
+                    watcher.rollback()
+            with sessions.begin() as revoker:  # signed out while the upload waits
+                revoker.execute(delete(auth.LoginSession))
+            holder.rollback()  # the lock is released and the upload continues
+            assert pending.result(timeout=30).status_code == 401
+    with sessions() as db:
+        assert db.scalar(select(func.count()).select_from(Document)) == 0
 
 
 # N04 · a sign-in that checked the old password can't create a session after the password changes.
