@@ -91,6 +91,30 @@ def page_metrics(gold: list[int], hit_pages: list[int], needs_all: bool = False)
     return hit, (1.0 / rank if rank else 0.0)
 
 
+def no_answer_ok(case: dict, a) -> bool:
+    """Scores a case the handbook can't answer directly.
+
+    - "expect_clarify": a greeting or a statement with no question; the bot should ask what the person wants.
+    - "role": the person said who they are and the handbook has no rule for that group. Saying "not found" is
+      right, and so is a partial answer that names their group (e.g. "the handbook doesn't mention a CEO; for
+      full-time employees it says ...").
+    - otherwise the bot should say "not found".
+    """
+    if case.get("expect_clarify"):
+        return bool(getattr(a, "clarify", False))
+    if case.get("role"):
+        return not a.found or (a.partial and _plain(case["role"]) in _plain(a.text))
+    return not a.found and not getattr(a, "clarify", False)
+
+
+def no_answer_label(case: dict) -> str:
+    if case.get("expect_clarify"):
+        return "asks what they want"
+    if case.get("role"):
+        return f"no rule for {case['role']}"
+    return "not in handbook"
+
+
 def gold_pages(case: dict) -> list[int]:
     if "pages" in case:
         return list(case["pages"] or [])
@@ -285,8 +309,9 @@ def main() -> None:
             r["ok"] = r["answer_ok"] and r["cite_ok"]
             r["expected"] = "p. " + ", ".join(map(str, gold))
         else:
-            r["ok"] = not a.found
-            r["expected"] = "not in handbook"
+            r["ok"] = no_answer_ok(case, a)
+            r["expected"] = no_answer_label(case)
+            r["kind"] = "clarify" if case.get("expect_clarify") else "role" if case.get("role") else "refuse"
         results.append(r)
         label = f"[{cat}] {q}" + (f"  (after: {' / '.join(case['history'])})" if case.get("history") else "")
         print(f"{'OK ' if r['ok'] else 'X  '} {label}")
@@ -305,7 +330,9 @@ def main() -> None:
     if pipeline.rerank_error:
         print(f"\nNote: the reranker failed at least once and retrieval order was used: {pipeline.rerank_error}")
     answerable = [r for r in results if r["answerable"]]
-    unanswerable = [r for r in results if not r["answerable"]]
+    unanswerable = [r for r in results if not r["answerable"] and r["kind"] == "refuse"]
+    roles = [r for r in results if not r["answerable"] and r["kind"] == "role"]
+    chit_chat = [r for r in results if not r["answerable"] and r["kind"] == "clarify"]
 
     def frac(items, key):
         n, d = sum(1 for r in items if r[key]), len(items)
@@ -323,6 +350,10 @@ def main() -> None:
         ("Says \"not found\" for questions the handbook doesn't cover", frac(unanswerable, "ok")),
         ("Answerable questions blocked by the citation checks (lower is better)", frac(answerable, "blocked")),
     ]
+    if roles:
+        summary.append(("Doesn't apply another group's rule to the person asking", frac(roles, "ok")))
+    if chit_chat:
+        summary.append(("Asks what they'd like to know after a greeting or statement", frac(chit_chat, "ok")))
     judge_lines = []
     if judge:
         judged = [r for r in results if r["judge"]]

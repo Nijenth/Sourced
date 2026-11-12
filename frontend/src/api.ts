@@ -40,6 +40,7 @@ export interface Answer {
   status: 'answered' | 'not_found' | 'unverified' | 'invalid_output'
   text: string
   partial: boolean
+  clarify?: boolean
   searched_for: string
   reason: string
   citations: Citation[]

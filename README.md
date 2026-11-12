@@ -64,7 +64,7 @@ flowchart LR
     J --> UI[Answer + page citations]
 ```
 
-**The answer contract.** The model must reply with JSON: an answer with `[n]` markers, a quote for each source, and a `coverage` of `full`, `partial` or `none`. "Partial" lets the model say "the documents give a rule, not the exact figure" without having to choose between a guess and a refusal.
+**The answer contract.** The model must reply with JSON: an answer with `[n]` markers, a quote for each source, and a `coverage` of `full`, `partial`, `none` or `clarify`. "Partial" lets the model say "the documents give a rule, not the exact figure" without having to choose between a guess and a refusal. "Partial" is also how it handles someone who says who they are ("I'm the CEO"): when the documents have no rule for that group, it says so and names the group the rule it quotes is for, instead of applying another group's rule to them. A fourth value, `clarify`, covers a greeting or a statement with no question in it ("hi", "I'm newly hired"); the reply is then a fixed invitation to ask, never model text.
 
 **Reading tables.** PDF readers usually turn a table into run-on text ("…After probation 4 weeks Lead, Principal and Director roles 8 weeks"), and neither the search nor the model can tell which value belongs to which row. Sourced reads each page twice: normally, for the text, and in pypdf's layout mode, which keeps wide gaps between columns. Lines with those gaps are recognised as table rows and rewritten with their column header:
 

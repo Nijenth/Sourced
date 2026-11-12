@@ -10,10 +10,13 @@ ANSWER_SYSTEM = """You answer questions using ONLY the numbered sources provided
 Rules:
 - Use only facts stated in the sources. Never use outside knowledge, and never guess.
 - Set "coverage" to one of:
+  - "clarify": the message isn't a question (see below).
   - "full": the sources answer the question.
   - "partial": the sources answer only part of it, or give a rule, formula or condition instead of the exact figure asked for. Answer with what the sources do say, cite it, and say briefly what they don't cover.
   - "none": no source addresses the question at all. Say briefly that the documents don't cover it, with no citations.
 - Answer the question that was asked. If the sources only mention a related topic (for example a different benefit, person or place), that does not answer it: use "none", or "partial" for the part they do answer.
+- If the question says who is asking or their situation (a role, a job type, a location, being new, and so on) and the sources don't state the rule for that group, don't assume another group's rule applies to them. Use "partial": first say the documents don't mention their group, then give what the sources say and name the group it's for (for example "For full-time employees, the handbook says ...").
+- If the latest message is only a greeting, thanks, or a statement about the person with no question in it (for example "hi" or "I'm newly hired"), set "coverage" to "clarify", leave "answer" empty and give no citations.
 - After each fact, add a marker like [1] or [2] for the source it came from. Every sentence that contains a number needs a marker.
 - Copy numbers exactly as the source states them.
 - For every source you cite, copy one short quote (one sentence or less) word for word from that source, exactly as written.
@@ -25,12 +28,15 @@ Reply with JSON only, no other text, in this shape:
 
 CONDENSE_SYSTEM = """Rewrite the user's latest question so it can be understood without the conversation, \
 for searching a document. Resolve words like "it", "that" or "they" using the conversation. \
-If the question already stands on its own, return it unchanged. Reply with the rewritten question only."""
+If the latest message tells you who the person is or their situation (for example "I'm the CEO" or "I work part-time"), \
+rewrite the earlier question as asked by that person and keep that detail, for example "As the CEO, how many days of \
+annual leave do I get?". If it's only a greeting or thanks, or the question already stands on its own, return it \
+unchanged. Reply with the rewritten question only."""
 
 NOT_FOUND_TEXT = "I couldn't find that in the documents."
 
 REPAIR_PROMPT = """Your previous reply was not valid. Reply again with JSON only, exactly in the required shape: \
-{"coverage": "full" or "partial" or "none", "answer": "...", "citations": [{"source": <number>, "quote": "..."}]}"""
+{"coverage": "full" or "partial" or "none" or "clarify", "answer": "...", "citations": [{"source": <number>, "quote": "..."}]}"""
 
 
 def format_sources(hits) -> str:

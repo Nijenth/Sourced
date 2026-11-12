@@ -69,6 +69,8 @@ class ChatResponse(BaseModel):
     searched_for: str = ""
     reason: str = ""
     fallback: str = ""
+    # True when the message was a greeting or statement: `text` is a fixed invitation to ask a question.
+    clarify: bool = False
     citations: list[CitationResponse] = Field(default_factory=list)
     passages: list[PassageResponse] = Field(default_factory=list)
     judgement: JudgementResponse | None = None

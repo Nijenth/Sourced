@@ -72,6 +72,7 @@ class Answer:
     attempts: int = 1  # model calls used to produce the answer
     raw: str = ""  # the model's reply as received, for debugging and evaluation (not shown to users)
     partial: bool = False  # the documents answer only part of the question (or give a rule, not a figure)
+    clarify: bool = False  # the message was a greeting or statement, not a question: text is CLARIFY_TEXT
     judgement: object = None  # rag.judge.Judgement when an accuracy check ran
 
 
@@ -121,7 +122,10 @@ def parse_model_json(raw: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-COVERAGE = ("full", "partial", "none")
+COVERAGE = ("full", "partial", "none", "clarify")
+# Shown when the message is a greeting or a statement rather than a question. Fixed text: nothing a model
+# writes is shown without the checks below.
+CLARIFY_TEXT = "Happy to help. What would you like to know? Ask me about anything in the documents."
 
 
 def validate_reply(data: dict) -> tuple[bool, bool, str, list[tuple[int, str]]]:
@@ -132,13 +136,13 @@ def validate_reply(data: dict) -> tuple[bool, bool, str, list[tuple[int, str]]]:
     if "coverage" in data:
         coverage = data.get("coverage")
         if not isinstance(coverage, str) or coverage.strip().lower() not in COVERAGE:
-            raise OutputError('"coverage" must be "full", "partial" or "none"')
+            raise OutputError('"coverage" must be "full", "partial", "none" or "clarify"')
         coverage = coverage.strip().lower()
-        found, partial = coverage != "none", coverage == "partial"
+        found, partial = coverage not in ("none", "clarify"), coverage == "partial"
     else:
         found, partial = data.get("found"), False
         if not isinstance(found, bool):
-            raise OutputError('"coverage" must be "full", "partial" or "none"')
+            raise OutputError('"coverage" must be "full", "partial", "none" or "clarify"')
     answer = data.get("answer")
     if not isinstance(answer, str):
         raise OutputError('"answer" must be text')
@@ -321,6 +325,8 @@ def _build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
     except OutputError as exc:
         return _blocked(INVALID_OUTPUT, f"The model's reply was malformed: {exc}.", hits, search_query)
 
+    if str(data.get("coverage", "")).strip().lower() == "clarify":
+        return Answer(text=CLARIFY_TEXT, found=False, hits=hits, search_query=search_query, status=NOT_FOUND, clarify=True)
     if not found:
         return Answer(text=text, found=False, hits=hits, search_query=search_query, status=NOT_FOUND)
     if not text:

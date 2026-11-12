@@ -25,6 +25,8 @@ These are all the passages the answer was written from; its [1], [2] markers ref
 For each factual claim in the answer, decide whether the passages state it. Numbers, names, roles,
 conditions and exceptions must match the passages exactly. If the answer says the documents don't
 give something but one of these passages does give it, that statement is unsupported.
+If the question says who is asking (a role or situation) and the answer applies a rule the passages
+give for a different group as if it were about them, without saying so, that claim is unsupported.
 
 Only check what the answer says. Do not mark it down for details it leaves out, or for gaps in the
 documents themselves: an incomplete but accurate answer is "supported".

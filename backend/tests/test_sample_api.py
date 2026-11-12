@@ -69,6 +69,7 @@ def test_answered_with_verified_sample_citation(client):
         "searched_for": "",
         "reason": "",
         "fallback": "",
+        "clarify": False,
         "citations": [{
             "number": citation["number"],
             "document_id": "brightleaf-handbook",
@@ -94,6 +95,7 @@ def test_question_outside_handbook(client):
         "searched_for": "",
         "reason": "",
         "fallback": "",
+        "clarify": False,
         "citations": [],
         "passages": [],
         "judgement": None,
