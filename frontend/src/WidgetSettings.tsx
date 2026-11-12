@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type FormEvent } from 'react'
-import { Copy, MessageCircle, Plus } from 'lucide-react'
+import { Copy, ExternalLink, MessageCircle, Plus } from 'lucide-react'
 import { api, errorMessage, post, type DocumentRow, type Provider } from './api'
 import { ErrorMessage, Heading, ResourceError, useResource } from './common'
 import { DocumentStatus } from './Documents'
@@ -25,6 +25,7 @@ export interface WidgetRecord extends WidgetFields {
   integrity: string | null
   hosted_url: string | null
   has_secret_key: boolean
+  demo_url?: string | null
 }
 
 const palette = [
@@ -50,6 +51,30 @@ function embedCode(widget: WidgetRecord | null) {
   if (!widget?.script_url || !widget.integrity) return ''
   return '<script src="' + widget.script_url + '"\n  data-site-key="' + widget.site_key + '"\n  integrity="' +
     widget.integrity + '"\n  crossorigin="anonymous" async></script>'
+}
+
+function PublicLink({ label, detail, url, copied, failed }: {
+  label: string; detail: string; url: string; copied: (message: string) => void; failed: (message: string) => void;
+}) {
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      copied(label + ' link copied.')
+    } catch {
+      failed('Select and copy the link manually: ' + url)
+    }
+  }
+  return <li>
+    <span><strong>{label}</strong><small>{detail}</small><code>{url}</code></span>
+    <span className="widget-link-actions">
+      <a className="secondary" href={url} target="_blank" rel="noopener noreferrer" aria-label={'Open ' + label.toLowerCase() + ' in a new tab'}>
+        <ExternalLink size={15} aria-hidden="true" />Open
+      </a>
+      <button type="button" className="secondary" onClick={() => void copy()} aria-label={'Copy ' + label.toLowerCase() + ' link'}>
+        <Copy size={15} aria-hidden="true" />Copy
+      </button>
+    </span>
+  </li>
 }
 
 function WidgetEditor({ widget, documents, providers, saved, removed }: {
@@ -167,8 +192,16 @@ function WidgetEditor({ widget, documents, providers, saved, removed }: {
           <p className="muted">{draft.access_mode === 'signed_in'
             ? 'The public site key identifies this widget. Your server issues a short-lived session token for each signed-in visitor.'
             : 'The site key is public. The website list controls browser embeds. Anyone with the key can call the public API directly.'}</p>
-          {widget?.hosted_url && <a className="widget-hosted-link" href={widget.hosted_url} target="_blank" rel="noopener noreferrer">Open hosted chat</a>}
         </section>
+
+        {(widget?.demo_url || widget?.hosted_url) && <section className="card widget-settings-card" aria-labelledby="links-title">
+          <h2 id="links-title">Your links</h2>
+          <p className="muted">Public pages where people can try this widget.</p>
+          <ul className="widget-links">
+            {widget.demo_url && <PublicLink label="Demo page" detail="A sample company website with this chat bubble." url={widget.demo_url} copied={setNotice} failed={setError} />}
+            {widget.hosted_url && <PublicLink label="Hosted chat" detail="The chat on its own page, for apps and direct links." url={widget.hosted_url} copied={setNotice} failed={setError} />}
+          </ul>
+        </section>}
 
         <section className="card widget-settings-card" aria-labelledby="access-title">
           <h2 id="access-title">Who can ask, and where</h2>

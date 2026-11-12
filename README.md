@@ -4,7 +4,14 @@
 
 Ask questions about your PDFs and get short answers drawn only from the documents. Every answer shows the file, the page and the exact passage behind it, and the app refuses to show answers it can't back up.
 
-**Live demo:** _add your Render link here (see [docs/deploy.md](docs/deploy.md))_
+**Live demo:** [sourced-vby6.onrender.com/demo/](https://sourced-vby6.onrender.com/demo/). Ask the assistant in the corner of a fictional company's site. (It runs on a free plan: the first visit after a quiet spell takes about a minute to wake up.)
+
+| Address | What it is |
+| --- | --- |
+| [`/demo/`](https://sourced-vby6.onrender.com/demo/) | A fictional company website with the Sourced chat bubble |
+| `/c/<site key>` | The same chat on its own page, for mobile apps and direct links |
+| `/` | The admin dashboard (sign-in; new sign-ups are closed on the demo) |
+| `/api/v1/...` | The API used by the dashboard, the widget and apps |
 
 <!-- Add a screenshot of the live app here: save it as docs/screenshot.png and uncomment the line below.
 ![Sourced answering a question about annual leave, with the source passage and page shown](docs/screenshot.png)

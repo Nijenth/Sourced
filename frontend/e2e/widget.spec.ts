@@ -38,11 +38,11 @@ test('Brightleaf demo embeds the widget and uses scoped chat, citations and rate
   await expect(page.getByLabel('Archive_Reference.pdf')).not.toBeChecked()
   const hosted = page.getByRole('switch', { name: /Allow a hosted chat link/ })
   await expect(hosted).not.toBeChecked()
-  await expect(page.getByRole('link', { name: 'Open hosted chat' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /Open hosted chat/ })).toHaveCount(0)
   await screenshot(page, 'widget-settings')
   await hosted.check()
   await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByRole('link', { name: 'Open hosted chat' })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Open hosted chat/ })).toBeVisible()
 
   await page.goto(api + '/demo/')
   await expect(page.getByRole('heading', { name: /Everything about working at Brightleaf/ })).toBeVisible()

@@ -85,3 +85,27 @@ it('defaults accuracy checking on when a new widget selects an AI model', async 
   expect(accuracy).toBeChecked()
   expect(screen.getByRole('switch', { name: /Allow a hosted chat link/ })).not.toBeChecked()
 })
+
+it('lists the demo page and hosted chat links when the server provides them', async () => {
+  const links = {
+    ...record, hosted_page_enabled: true,
+    hosted_url: 'https://chat.example.com/c/pk_sample', demo_url: 'https://chat.example.com/demo/',
+  }
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => new Response(JSON.stringify(
+    path === '/api/v1/widgets' ? [links] : path === '/api/v1/providers' ? [{ name: 'groq', label: 'GroqCloud', ready: true }] : [],
+  ))))
+  render(<WidgetSettings />)
+  const box = await screen.findByRole('region', { name: 'Your links' })
+  expect(within(box).getByRole('link', { name: /Open demo page/ })).toHaveAttribute('href', 'https://chat.example.com/demo/')
+  expect(within(box).getByRole('link', { name: /Open hosted chat/ })).toHaveAttribute('href', 'https://chat.example.com/c/pk_sample')
+  expect(within(box).getByRole('button', { name: 'Copy demo page link' })).toBeVisible()
+})
+
+it('shows no links box when the widget has no public pages', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => new Response(JSON.stringify(
+    path === '/api/v1/widgets' ? [record] : path === '/api/v1/providers' ? [{ name: 'groq', label: 'GroqCloud', ready: true }] : [],
+  ))))
+  render(<WidgetSettings />)
+  await screen.findByRole('heading', { name: 'Add it to your site' })
+  expect(screen.queryByRole('region', { name: 'Your links' })).not.toBeInTheDocument()
+})

@@ -15,6 +15,7 @@ from .channels import canonical_origin, public_settings
 from .common import resolve_provider
 from .db import Db
 from .db.models import Document, Widget, WidgetDocument
+from .demo import demo_site_key
 from .widget_assets import embed_details
 from .widget_sessions import SessionRequest, SessionResponse, accepts_secret, bearer, issue_session, unauthorized
 
@@ -52,6 +53,7 @@ class WidgetSettings(WidgetFields):
     integrity: str | None
     hosted_url: str | None
     has_secret_key: bool
+    demo_url: str | None = None
 
 
 class RotateKeys(BaseModel):
@@ -109,6 +111,10 @@ def settings_response(db: Db, request: Request, widget: Widget) -> WidgetSetting
         **{field: getattr(widget, field) for field in WidgetFields.model_fields if field != "document_ids"},
         document_ids=document_ids(db, widget), id=widget.id, site_key=widget.site_key, created_at=widget.created_at,
         has_secret_key=widget.secret_key_hash is not None,
+        demo_url=(
+            f"{channels.public_origin}/demo/"
+            if channels.public_origin and channels.preview_secret and demo_site_key(db) == widget.site_key else None
+        ),
         **embed_details(
             channels.public_origin if channels.preview_secret else None, widget.site_key, widget.hosted_page_enabled,
         ),

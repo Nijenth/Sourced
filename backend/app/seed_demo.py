@@ -20,17 +20,12 @@ from .auth import passwords
 from .chat import SAMPLE_PDF
 from .db import database_engine
 from .db.models import Document, Membership, User, Widget, WidgetDocument, Workspace
+from .demo import DEMO_WIDGET_NAME, demo_admin_email
 from .documents import enqueue_document
 from .widgets import new_site_key
 
-DEMO_WIDGET_NAME = "Sourced demo"
 DEMO_WORKSPACE_NAME = "Brightleaf Studio (demo)"
 logger = logging.getLogger(__name__)
-
-
-def demo_admin_email() -> str | None:
-    email = environ.get("SOURCED_DEMO_ADMIN_EMAIL", "").strip().casefold()
-    return email or None
 
 
 def seed(sessions: sessionmaker, email: str, password: str, provider: str) -> str:

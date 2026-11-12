@@ -86,6 +86,8 @@ def test_admin_provider_failure_returns_a_code_and_refunds_the_daily_allowance(w
     request_id = response.headers["x-request-id"]
     handled = [record for record in caplog.records if getattr(record, "request_id", "-") == request_id]
     assert any(record.name == "backend.app.errors" for record in handled)
+    # The operator's log line says which provider failed and how; the client never sees that.
+    assert any("Gemini is rate-limiting" in record.getMessage() for record in handled if record.name == "backend.app.errors")
     assert any(record.name == "sourced.timing" and "outcome=error:rate_limited" in record.getMessage() for record in handled)
     assert all(QUESTION not in record.getMessage() and "secret" not in record.getMessage() for record in caplog.records)
 

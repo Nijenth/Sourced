@@ -19,3 +19,5 @@ footer a { color: #1f5c46; }
 footer { padding: 0 clamp(20px, 5vw, 56px) 110px; }
 :focus-visible { outline: 3px solid #1f5c46; outline-offset: 3px; }
 @media (max-width: 650px) { .topics { grid-template-columns: 1fr; gap: 10px; } }
+.demo-banner { padding: 10px clamp(16px, 4vw, 40px); background: #1f5c46; color: #ffffff; font-size: 14px; line-height: 1.5; }
+.demo-banner a { color: #ffffff; text-decoration: underline; margin-left: 4px; }

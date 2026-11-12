@@ -17,7 +17,7 @@ from rag.providers import Embedder, ProviderError, make_embedder
 
 from .db import database_engine
 from .db.models import Document, DocumentChunk, DocumentFile, LoginSession, QuestionLimit
-from .errors import MISCONFIGURED, TRANSIENT, provider_error_code
+from .errors import MISCONFIGURED, TRANSIENT, log_summary, provider_error_code
 from .pdf_tasks import PdfTaskError, extract_chunks
 from .settings import DocumentLimits, positive_int
 
@@ -168,7 +168,7 @@ def _process_job(
         error = "The embedding provider returned unusable results for this document."
     except ProviderError as exc:
         code = provider_error_code(exc)
-        logger.warning("Embedding failed (%s, attempt %d of %d).", code, job.attempts, MAX_ATTEMPTS)
+        logger.warning("Embedding failed (%s, attempt %d of %d): %s", code, job.attempts, MAX_ATTEMPTS, log_summary(exc))
         if code in TRANSIENT and job.attempts < MAX_ATTEMPTS:
             # Back off 1x, 2x, 4x… the base delay so a rate limit or short outage can clear.
             requeue_job(sessions, job, retry_seconds * 2 ** (job.attempts - 1))
