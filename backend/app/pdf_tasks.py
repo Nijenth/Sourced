@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from dataclasses import asdict, replace
 
 from rag.documents import Chunk, chunk_pages, count_pages, load_pdf
@@ -16,11 +17,53 @@ DEFAULT_MEMORY_MB = 1024
 MEMORY_ENV = "SOURCED_PDF_MEMORY_MB"
 
 
+CONCURRENCY_ENV = "SOURCED_PDF_CONCURRENCY"
+DEFAULT_CONCURRENCY = 2
+REQUEST_WAIT_SECONDS = 10.0
+
+
 class PdfTaskError(ValueError):
     pass
 
 
-def run_pdf_task(operation: str, data: bytes, *args: str, timeout: int) -> bytes:
+class PdfBusy(PdfTaskError):
+    """Every PDF slot stayed busy for the whole wait. Callers answer 503 so the client can retry."""
+
+    def __init__(self):
+        super().__init__("The server is busy reading other PDFs. Try again in a moment.")
+
+
+_slots: tuple[int, threading.BoundedSemaphore] | None = None
+_slots_lock = threading.Lock()
+
+
+def pdf_slots() -> threading.BoundedSemaphore:
+    """One process-wide limit on PDF subprocesses running at once (security audit S02): uploads, page
+    pictures and highlights all share it, so a burst of them queues instead of exhausting memory."""
+    global _slots
+    size = int(os.environ.get(CONCURRENCY_ENV, DEFAULT_CONCURRENCY))
+    if size < 1:
+        raise ValueError(f"{CONCURRENCY_ENV} must be a positive integer.")
+    with _slots_lock:
+        if _slots is None or _slots[0] != size:
+            _slots = (size, threading.BoundedSemaphore(size))
+        return _slots[1]
+
+
+def run_pdf_task(operation: str, data: bytes, *args: str, timeout: int, background: bool = False) -> bytes:
+    """Run one PDF operation in a child process, once a slot is free. A web request waits up to
+    REQUEST_WAIT_SECONDS and then gets PdfBusy; the background worker waits as long as it takes."""
+    slots = pdf_slots()
+    acquired = slots.acquire() if background else slots.acquire(timeout=REQUEST_WAIT_SECONDS)
+    if not acquired:
+        raise PdfBusy()
+    try:
+        return _run(operation, data, args, timeout)
+    finally:
+        slots.release()
+
+
+def _run(operation: str, data: bytes, args: tuple[str, ...], timeout: int) -> bytes:
     # The parser only needs the PDF and a minimal runtime environment.
     env = {name: os.environ[name] for name in ("SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP") if name in os.environ}
     env[MEMORY_ENV] = str(memory_limit_mb())
@@ -41,7 +84,8 @@ def run_pdf_task(operation: str, data: bytes, *args: str, timeout: int) -> bytes
 
 
 def extract_chunks(data: bytes, filename: str, max_characters: int, timeout: int) -> list[Chunk]:
-    payload = run_pdf_task("extract", data, filename, str(max_characters), timeout=timeout)
+    # The background worker waits for a slot rather than failing the document.
+    payload = run_pdf_task("extract", data, filename, str(max_characters), timeout=timeout, background=True)
     malformed = "The PDF text could not be extracted. Try saving the PDF again and uploading it."
     try:
         records = json.loads(payload)

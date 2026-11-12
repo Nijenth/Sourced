@@ -164,13 +164,15 @@ def chat(body: PublicChatRequest, request: Request, response: Response, db: Db, 
             raise unauthorized()
         if presented is not None:
             presented.verify(settings.preview_secret, current)
-        cited = {UUID(citation.document_id) for citation in answer.citations}
-        if cited:
+        # Every document the models read, not only the cited ones, must still be attached and ready: an answer
+        # written while a document was being removed could otherwise still rely on it (security audit S06).
+        context = {UUID(id) for id in answer.context_document_ids} | {UUID(c.document_id) for c in answer.citations}
+        if context:
             attached = set(document_ids(db, current))
             ready = set(db.scalars(select(Document.id).where(
-                Document.id.in_(cited), Document.workspace_id == workspace_id, Document.status == "ready",
+                Document.id.in_(context), Document.workspace_id == workspace_id, Document.status == "ready",
             ).with_for_update(read=True)))
-            if not cited <= attached or cited != ready:
+            if not context <= attached or context != ready:
                 answer = ChatResponse(status="not_found", text=NOT_FOUND_TEXT)
         if answer.status == "answered":
             for citation in answer.citations:

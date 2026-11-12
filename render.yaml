@@ -40,6 +40,8 @@ services:
         value: "0"
       - key: SOURCED_PDF_MEMORY_MB
         value: "256"
+      - key: SOURCED_PDF_CONCURRENCY  # one 256 MB PDF reader at a time fits the free plan's 512 MB
+        value: "1"
       - key: SOURCED_WORKSPACE_QUESTIONS_PER_DAY
         value: "200"
       # Render's proxy (10.0.0.0/8) and Cloudflare, which sits in front of it (https://www.cloudflare.com/ips/),

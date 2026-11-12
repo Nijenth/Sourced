@@ -157,4 +157,5 @@ def to_response(answer: Answer, question: str) -> ChatResponse:
             for hit in answer.hits[:3]
         ] if blocked else [],
         judgement=judgement,
+        context_document_ids=sorted({str(hit.document_id) for hit in answer.hits if isinstance(hit, DocumentHit)}),
     )
