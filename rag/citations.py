@@ -380,5 +380,44 @@ def _build_answer(raw: str, hits: list[Hit], search_query: str) -> Answer:
         hit = hits[n - 1]
         located = quotes.get(n)
         citations.append(Citation(n, hit.chunk.source, hit.chunk.page, located or snippet(hit.chunk.text), located is not None))
+
+    # 5. Who's asking. The model names the group the person says they belong to ("CEO"); the code, not the model,
+    #    decides whether the sources mention it. If they don't, the answer can't be about that group, so it says so.
+    asker = clean_asker(data.get("asker"))
+    if asker and not mentions(asker, text) and not any(mentions(asker, hit.chunk.text) for hit in hits):
+        text = UNMENTIONED_ASKER.format(asker=asker) + " " + text
+        partial = True
     return Answer(text=text, found=True, citations=citations, hits=hits, search_query=search_query, status=ANSWERED,
                   partial=partial)
+
+
+UNMENTIONED_ASKER = "The documents don't mention “{asker}”, so check whether this applies to you."
+_ASKER_WORD = re.compile(r"[^\W\d_]+")
+_ASKER_STOP = frozenset({"a", "an", "the", "and", "or", "of", "for", "in", "at", "on", "to", "my", "our", "i", "am", "im"})
+
+
+def clean_asker(value) -> str:
+    """The model's "asker" field as a short plain label, or "" if it's missing or doesn't look like a label."""
+    if not isinstance(value, str):
+        return ""
+    label = collapse(value.translate(_TRANSLATE)).strip(" \"'.,;:!?()[]")
+    # Only short, letters-only labels: no numbers (they'd dodge the number check), markers or sentences.
+    if not label or len(label) > 40 or len(label.split()) > 4 or not re.fullmatch(r"[^\W\d_]+(?:[ '-][^\W\d_]+)*", label):
+        return ""
+    if not any(w not in _ASKER_STOP for w in _ASKER_WORD.findall(label.lower())):
+        return ""
+    return label
+
+
+def mentions(label: str, text: str) -> bool:
+    """True if any word of `label` appears in `text`, allowing simple word endings ("manager" ~ "management")."""
+    words = {w for w in _ASKER_WORD.findall(_norm(text))}
+    for word in _ASKER_WORD.findall(label.lower()):
+        if word in _ASKER_STOP:
+            continue
+        if len(word) <= 4:
+            if word in words:
+                return True
+        elif any(other.startswith(word[:5]) for other in words):
+            return True
+    return False
