@@ -74,3 +74,6 @@ class ChatResponse(BaseModel):
     citations: list[CitationResponse] = Field(default_factory=list)
     passages: list[PassageResponse] = Field(default_factory=list)
     judgement: JudgementResponse | None = None
+    # Internal only, never sent: every document the models read for this answer, cited or not. The widget
+    # rechecks them all before replying, in case one was removed while the answer was written (audit S06).
+    context_document_ids: list[str] = Field(default_factory=list, exclude=True)

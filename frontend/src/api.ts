@@ -60,6 +60,7 @@ export interface UsageRow {
 
 /** Short codes the API sends with some errors, next to the friendly message in `detail`. */
 export type ErrorCode = 'rate_limited' | 'provider_unavailable' | 'misconfigured' | 'too_many_requests'
+  | 'request_too_large' | 'workspace_full' | 'uploads_pending' | 'server_busy' | 'pdf_busy'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public code: ErrorCode | null = null) {
@@ -67,7 +68,10 @@ export class ApiError extends Error {
   }
 }
 
-const errorCodes = new Set<string>(['rate_limited', 'provider_unavailable', 'misconfigured', 'too_many_requests'])
+const errorCodes = new Set<string>([
+  'rate_limited', 'provider_unavailable', 'misconfigured', 'too_many_requests',
+  'request_too_large', 'workspace_full', 'uploads_pending', 'server_busy', 'pdf_busy',
+])
 
 const prefix = '/api/v1'
 

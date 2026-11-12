@@ -29,7 +29,7 @@ Use the direct (unpooled) string: Sourced keeps its own connection pool.
 - GroqCloud: console.groq.com → API Keys → create a key (`gsk_...`).
 - Gemini: aistudio.google.com → Get API key.
 
-Set a spending limit or keep both on free plans. The demo also limits itself to 200 questions a day (`SOURCED_WORKSPACE_QUESTIONS_PER_DAY`) and 10 questions a minute per visitor.
+Set a spending limit or keep both on free plans. The demo also limits itself to 200 questions a day (`SOURCED_WORKSPACE_QUESTIONS_PER_DAY`) and 10 questions a minute per visitor. Each workspace can store up to 100 documents and 250 MB, with at most 5 uploads waiting to be processed, and requests other than uploads are capped at 64 KB; `.env.example` lists the settings.
 
 ### 3. Deploy on Render
 

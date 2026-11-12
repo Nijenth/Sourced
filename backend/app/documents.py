@@ -10,7 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
@@ -20,10 +20,14 @@ from rag.providers import PROVIDERS, embedding_provider_name
 from .auth import CurrentMember, VerifiedMember
 from .db import Db
 from .db.models import Document, DocumentFile, PagePreview
-from .pdf_tasks import PdfTaskError, run_pdf_task
+from .errors import CodedHTTPException
+from .pdf_tasks import PdfBusy, PdfTaskError, run_pdf_task
+from .settings import UploadQuota
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 MULTIPART_OVERHEAD = 64 * 1024
+PENDING = ("queued", "processing")
+UPLOAD_ADMISSION_LOCK = 0x50D0_0001  # Postgres advisory lock: one upload admission decision at a time
 
 
 class DocumentStatus(BaseModel):
@@ -117,15 +121,54 @@ def upload_document(
 ) -> QueuedDocument:
     filename, data = upload
     limits = request.state.document_limits
+    quota = UploadQuota.from_env()
+    admit_upload(db, member.workspace_id, len(data), quota)  # fail fast, before spending a PDF slot
     try:
         pages = int(run_pdf_task("count", data, timeout=limits.timeout))
     except PdfTaskError as exc:
-        raise HTTPException(422, str(exc)) from None
+        raise pdf_failure(exc, str(exc)) from None
     if not 1 <= pages <= limits.pages:
         raise HTTPException(422, f"Upload a PDF with 1 to {limits.pages} pages.")
+    # Decide again under a lock, so uploads arriving together can't all squeeze past the limits.
+    admit_upload(db, member.workspace_id, len(data), quota, lock=True)
     result = QueuedDocument(id=enqueue_document(db, member.workspace_id, filename, data, pages))
     db.commit()
     return result
+
+
+def admit_upload(db: Db, workspace_id: UUID, size: int, quota: UploadQuota, lock: bool = False) -> None:
+    """Refuse an upload that would take the workspace or the server past its limits (security audit S02)."""
+    if lock:
+        db.execute(select(func.pg_advisory_xact_lock(UPLOAD_ADMISSION_LOCK)))
+    documents, stored, pending = db.execute(
+        select(
+            func.count(Document.id),
+            func.coalesce(func.sum(func.octet_length(DocumentFile.pdf)), 0),
+            func.count(Document.id).filter(Document.status.in_(PENDING)),
+        )
+        .select_from(Document).outerjoin(DocumentFile, DocumentFile.document_id == Document.id)
+        .where(Document.workspace_id == workspace_id)
+    ).one()
+    if documents >= quota.documents:
+        raise CodedHTTPException(409, "workspace_full", (
+            f"This workspace has reached its limit of {quota.documents} documents. Delete one to upload another."))
+    if stored + size > quota.storage_bytes:
+        raise CodedHTTPException(409, "workspace_full", (
+            f"This upload would take the workspace past its {quota.storage_bytes // (1024 * 1024)} MB storage limit. "
+            "Delete a document to make room."))
+    if pending >= quota.pending:
+        raise CodedHTTPException(429, "uploads_pending", (
+            f"{pending} uploads are still being processed. Wait for them to finish, then upload again."),
+            {"Retry-After": "30"})
+    if db.scalar(select(func.count()).select_from(Document).where(Document.status.in_(PENDING))) >= quota.pending_total:
+        raise CodedHTTPException(503, "server_busy", "The server is processing many uploads. Try again in a few minutes.",
+                                 {"Retry-After": "60"})
+
+
+def pdf_failure(exc: PdfTaskError, message: str) -> HTTPException:
+    if isinstance(exc, PdfBusy):
+        return CodedHTTPException(503, "pdf_busy", str(exc), {"Retry-After": "10"})
+    return HTTPException(422, message)
 
 
 @router.get("")
@@ -203,8 +246,8 @@ def highlighted_preview(
     try:
         payload = json.dumps(body.quote).encode() + b"\n" + data
         png = run_pdf_task("highlight", payload, str(page), timeout=request.state.document_limits.timeout)
-    except PdfTaskError:
-        raise HTTPException(422, "This page could not be rendered.") from None
+    except PdfTaskError as exc:
+        raise pdf_failure(exc, "This page could not be rendered.") from None
     return Response(png, media_type="image/png", headers={"Cache-Control": "private, no-store"})
 
 
@@ -223,8 +266,8 @@ def page_png(db: Db, workspace_id: UUID, document_id: UUID, page: int, timeout: 
             raise HTTPException(404, "Document page not found.")
         try:
             png = run_pdf_task("preview", data, str(page), timeout=timeout)
-        except PdfTaskError:
-            raise HTTPException(422, "This page could not be rendered.") from None
+        except PdfTaskError as exc:
+            raise pdf_failure(exc, "This page could not be rendered.") from None
         db.execute(insert(PagePreview).values(document_id=owned_id, page=page, png=png).on_conflict_do_nothing())
         db.commit()
     return png
