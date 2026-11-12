@@ -5,6 +5,7 @@ Run locally:  streamlit run app.py
 from __future__ import annotations
 
 import datetime as dt
+import html
 import io
 import os
 import re
@@ -133,21 +134,28 @@ _MARKDOWN_PUNCTUATION = re.compile(r"([!-/:-@\[-`{-~])")
 JUDGE_BLOCK_REASON = "An accuracy check found claims the passages don't support."
 
 
-# Streamlit also turns bare web and email addresses into links after Markdown is parsed, so escaping alone
-# doesn't stop them. An invisible word joiner (U+2060) inside each address breaks that detection.
-_WORD_JOINER = "\u2060"
-_LINK_SCHEME = re.compile(r"(?i)\b(https?|ftp|mailto|xmpp)(?=:)")
-_WWW = re.compile(r"(?i)\b(www)(?=\.)")
-
-
 def md_escape(text: str) -> str:
-    """Show text exactly as written. Streamlit reads Markdown everywhere, so a document or the model could
-    otherwise add links, images or formatting (and "$" would start LaTeX math). Backslash-escaping every ASCII
-    punctuation mark is valid Markdown and renders as the plain character; the word joiners stop Streamlit
-    from linking addresses it finds in the text."""
-    text = _LINK_SCHEME.sub(lambda m: m.group(1) + _WORD_JOINER, str(text))
-    text = _WWW.sub(lambda m: m.group(1) + _WORD_JOINER, text).replace("@", _WORD_JOINER + "@")
-    return _MARKDOWN_PUNCTUATION.sub(r"\\\1", text)
+    """For short text we control (labels, provider names) inside Markdown: backslash-escaping every ASCII
+    punctuation mark renders it as written and stops "$" from starting LaTeX math. Untrusted text (answers,
+    quotes, file names, model output) goes through show() instead, because Streamlit also turns bare web and
+    email addresses into links after Markdown is parsed, which escaping can't prevent."""
+    return _MARKDOWN_PUNCTUATION.sub(r"\\\1", str(text))
+
+
+_TEXT_STYLES = {
+    "body": "",
+    "small": "font-size:0.875rem;opacity:0.7;",
+    "quote": "border-left:3px solid rgba(128,128,128,0.4);padding-left:0.75rem;opacity:0.85;",
+    "warning": "font-size:0.875rem;padding:0.5rem 0.75rem;border-radius:0.5rem;background:rgba(255,189,69,0.15);",
+}
+
+
+def show(text: str, kind: str = "body") -> None:
+    """Show untrusted text exactly as written: escaped HTML is plain text, so there is no Markdown, no
+    formatting and nothing for Streamlit to turn into a link (security reviews S03, N03, N08). What a
+    reader copies is exactly the original text."""
+    body = html.escape(str(text)).replace("\n", "<br>")
+    st.html(f'<div class="sourced-text" style="white-space:normal;line-height:1.6;{_TEXT_STYLES[kind]}">{body}</div>')
 
 
 def take_daily_slot() -> bool:
@@ -232,15 +240,16 @@ def draft_incident_report() -> None:
 
 
 def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
-    st.markdown(md_escape(msg["content"]))
+    show(msg["content"])
     if msg.get("error"):
         return
     if msg.get("status") in ("unverified", "invalid_output"):
         if msg.get("reason"):
-            st.caption(f"Why: {md_escape(msg['reason'])}")
+            show(f"Why: {msg['reason']}", "small")
         for i, p in enumerate(msg.get("passages", []), 1):
-            with st.expander(f"{md_escape(p['source'])} · page {p['page']}"):
-                st.markdown("> " + md_escape(p["text"]))
+            with st.expander(f"Passage {i} · page {p['page']}"):  # labels parse Markdown: keep them fixed
+                show(p["source"], "small")
+                show(p["text"], "quote")
                 data = files.get(p["source"])
                 if data and st.toggle("Show the page", key=f"passage-{idx}-{i}"):
                     st.image(render_page(file_hash(data), p["page"], data), width="stretch")
@@ -253,20 +262,26 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
         return
 
     if msg.get("searched_for"):
-        st.caption(f"Searched for: “{md_escape(msg['searched_for'])}”")
+        show(f"Searched for: “{msg['searched_for']}”", "small")
     judgement = msg.get("judgement")
     if judgement:
-        problems = "; ".join(md_escape(p) for p in judgement.get("problems", [])[:3])
+        problems = "; ".join(judgement.get("problems", [])[:3])
         verdict = judgement.get("verdict")
         by = f" ({md_escape(judgement['judge'])})" if judgement.get("judge") else ""
         if verdict == "supported":
             st.caption(f"✓ Accuracy check{by}: every claim matches the passages.")
         elif verdict == "partial":
-            st.warning(f"Accuracy check{by}: some details may not be fully supported by the sources." + (f" ({problems})" if problems else ""))
+            st.warning(f"Accuracy check{by}: some details may not be fully supported by the sources.")
+            if problems:
+                show(problems, "small")
         elif verdict == "unsupported":
-            st.error(f"Accuracy check{by}: the passages don't support this answer." + (f" ({problems})" if problems else ""))
+            st.error(f"Accuracy check{by}: the passages don't support this answer.")
+            if problems:
+                show(problems, "small")
         else:
-            st.caption(f"The accuracy check{by} couldn't run for this answer." + (f" {problems}" if problems else ""))
+            st.caption(f"The accuracy check{by} couldn't run for this answer.")
+            if problems:
+                show(problems, "small")
     if msg.get("partial"):
         st.caption("The documents only partly answer this. Check the sources below.")
     citations = msg.get("citations", [])
@@ -274,8 +289,9 @@ def render_answer(msg: dict, idx: int, files: dict[str, bytes]) -> None:
         return
     st.caption("Sources")
     for c in citations:
-        with st.expander(f"\\[{c['number']}\\]  {md_escape(c['source'])} · page {c['page']}"):
-            st.markdown("> " + md_escape(c["quote"]))
+        with st.expander(f"Source {c['number']} · page {c['page']}"):  # labels parse Markdown: keep them fixed
+            show(c["source"], "small")
+            show(c["quote"], "quote")
             if not c["verified"]:
                 st.caption("Closest passage on this page. The model's quote didn't match the text word for word.")
             data = files.get(c["source"])
@@ -407,7 +423,7 @@ with st.sidebar:
                         s, fs, warns = None, {}, [str(exc)]
                 ss.upload.update(store=s, files=fs, warnings=warns)
         for w in ss.upload["warnings"]:
-            st.warning(md_escape(w))
+            show(w, "warning")
         store, files = ss.upload["store"], ss.upload["files"]
         if store is not None:
             st.success(f"Indexed {len(files)} file(s), {sum(store.sources.values())} pages.")
@@ -453,7 +469,7 @@ if not messages and mode == MODE_SAMPLE:
             st.rerun()
 elif not messages:
     names = ", ".join(files)
-    st.markdown(f"Ready. Ask anything about **{md_escape(names)}**.")
+    show(f"Ready. Ask anything about {names}.")
 
 if mode == MODE_SAMPLE and st.button("Draft IT incident report"):
     draft_incident_report()
@@ -461,7 +477,7 @@ if mode == MODE_SAMPLE and st.button("Draft IT incident report"):
 for i, msg in enumerate(messages):
     with st.chat_message(msg["role"]):
         if msg["role"] == "user":
-            st.markdown(md_escape(msg["content"]))
+            show(msg["content"])
         else:
             render_answer(msg, i, files)
 
@@ -472,7 +488,7 @@ prompt = (prompt or "").strip()[:1000]
 
 if prompt:
     with st.chat_message("user"):
-        st.markdown(md_escape(prompt))
+        show(prompt)
 
     if ss.asked >= settings.max_questions_per_session:
         reply = {"role": "assistant", "content": "You've reached the question limit for this demo session.", "error": True}

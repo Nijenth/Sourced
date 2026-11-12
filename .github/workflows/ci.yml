@@ -135,6 +135,9 @@ jobs:
         run: python -m frontend.e2e.run_live --widgets
       - name: Signed-in widget and access-log walkthrough
         run: python -m frontend.e2e.run_live --signed-in
+      - name: Streamlit demo shows untrusted text literally
+        run: npx playwright test -c playwright.streamlit.config.ts
+        working-directory: frontend
       - name: Keep Playwright traces on failure
         if: failure()
         uses: actions/upload-artifact@v4

@@ -189,7 +189,7 @@ See the [Sourced backend guide](backend/README.md) for the workspace API, databa
 
 ## Deploy
 
-The full product (API, dashboard, website widget and the Brightleaf demo) is one Docker image. [docs/deploy.md](docs/deploy.md) walks through a free deployment on Render with a Neon database, and a local run with `docker compose up --build`. [docs/security.md](docs/security.md) tracks the findings of two independent security reviews and what's fixed.
+The full product (API, dashboard, website widget and the Brightleaf demo) is one Docker image. [docs/deploy.md](docs/deploy.md) walks through a free deployment on Render with a Neon database, and a local run with `docker compose up --build`. [docs/security.md](docs/security.md) tracks the findings of three AI-assisted security reviews and what's fixed.
 
 ### Streamlit demo (simplest, free)
 

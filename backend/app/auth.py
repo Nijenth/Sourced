@@ -58,22 +58,32 @@ def session_hash(request: Request) -> str:
     return digest(token)
 
 
-def get_member(request: Request, response: Response, db: Db) -> Member:
+def current_member(request: Request, db: Db, lock: bool = False) -> Member:
+    """The signed-in workspace admin. Expiry is checked against the current time, not the transaction's start.
+    With `lock`, the session and membership rows stay share-locked until the transaction ends, so a sign-out,
+    password change or removal from the workspace waits for the write that relies on them (review N06)."""
     statement = (
         select(User.id, User.email, Workspace.id.label("workspace_id"), Workspace.name.label("workspace_name"), Membership.role)
         .select_from(LoginSession)
         .join(Membership, (Membership.user_id == LoginSession.user_id) & (Membership.workspace_id == LoginSession.workspace_id))
         .join(User, User.id == Membership.user_id)
         .join(Workspace, Workspace.id == Membership.workspace_id)
-        .where(LoginSession.token_hash == session_hash(request), LoginSession.expires_at > func.now())
+        .where(LoginSession.token_hash == session_hash(request), LoginSession.expires_at > func.clock_timestamp())
     )
+    if lock:
+        statement = statement.with_for_update(read=True, of=[LoginSession, Membership])
     row = db.execute(statement).mappings().one_or_none()
     if row is None:
         raise HTTPException(401, "Sign in to Sourced.")
     if row["role"] != "admin":
         raise HTTPException(403, "Workspace administrator access is required.")
-    response.headers["Cache-Control"] = "private, no-store"
     return Member.model_validate(row)
+
+
+def get_member(request: Request, response: Response, db: Db) -> Member:
+    member = current_member(request, db)
+    response.headers["Cache-Control"] = "private, no-store"
+    return member
 
 
 CurrentMember = Annotated[Member, Depends(get_member)]
