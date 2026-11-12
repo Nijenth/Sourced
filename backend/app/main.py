@@ -23,6 +23,7 @@ from .db import Db, database_engine
 from .db.models import Document
 from .documents import router as documents_router
 from .errors import CodedHTTPException, coded_error, provider_failure
+from .limits import BodySizeLimit
 from .observability import RequestIdMiddleware, install_log_record_factory
 from .public import api as public_api, pages as public_pages
 from .schemas import ChatResponse, WorkspaceChatRequest
@@ -128,6 +129,8 @@ class DashboardCors:
 
 
 app.add_middleware(DashboardCors)
+# Before any route reads a body (security audit S01).
+app.add_middleware(BodySizeLimit)
 # Added last so it wraps everything, including CORS responses.
 app.add_middleware(RequestIdMiddleware)
 app.add_exception_handler(CodedHTTPException, coded_error)

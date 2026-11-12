@@ -10,7 +10,7 @@ from hashlib import sha256
 from os import environ
 
 from argon2.exceptions import VerificationError
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import sessionmaker
 
 from rag.documents import count_pages
@@ -19,7 +19,15 @@ from rag.providers import chat_provider_names
 from .auth import passwords
 from .chat import SAMPLE_PDF
 from .db import database_engine
-from .db.models import Document, Membership, User, Widget, WidgetDocument, Workspace
+from .db.models import (
+    Document,
+    LoginSession,
+    Membership,
+    User,
+    Widget,
+    WidgetDocument,
+    Workspace,
+)
 from .demo import DEMO_WIDGET_NAME, demo_admin_email
 from .documents import enqueue_document
 from .widgets import new_site_key
@@ -45,7 +53,9 @@ def seed(sessions: sessionmaker, email: str, password: str, provider: str) -> st
             try:
                 passwords.verify(user.password_hash, password)
             except VerificationError:
-                user.password_hash = passwords.hash(password)  # the configured password wins
+                # The configured password wins, and anyone signed in with the old one is signed out.
+                user.password_hash = passwords.hash(password)
+                db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
             workspace_id = db.scalar(
                 select(Membership.workspace_id).where(Membership.user_id == user.id, Membership.role == "admin")
                 .join(Workspace, Workspace.id == Membership.workspace_id).order_by(Workspace.created_at).limit(1)

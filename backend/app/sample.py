@@ -11,6 +11,7 @@ from rag.providers import ProviderError
 from .chat import SAMPLE_DOCUMENT_ID, SampleChat
 from .common import api, providers, resolve_provider
 from .errors import CodedHTTPException, coded_error, provider_failure
+from .limits import BodySizeLimit
 from .observability import RequestIdMiddleware, install_log_record_factory
 from .schemas import ChatRequest, ChatResponse
 
@@ -47,5 +48,6 @@ app = FastAPI(title="Sourced Sample API", version="1.0.0", lifespan=lifespan)
 app.include_router(api)
 app.include_router(sample)
 app.add_exception_handler(CodedHTTPException, coded_error)
+app.add_middleware(BodySizeLimit)
 app.add_middleware(RequestIdMiddleware)
 install_log_record_factory()
