@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from backend.app.db.models import Document, User, Widget, WidgetDocument
-from backend.app.seed_demo import DEMO_WIDGET_NAME, seed
+from backend.app.demo import DEMO_WIDGET_NAME
+from backend.app.seed_demo import seed
 from backend.app.settings import DocumentLimits
 from backend.app.web import mount_dashboard
 from backend.app.worker import process_one
@@ -135,3 +136,19 @@ def test_public_origin_defaults_to_renders_address(monkeypatch):
     assert ChannelSettings.from_env().public_origin == "https://sourced-ab12.onrender.com"
     monkeypatch.setenv("SOURCED_PUBLIC_ORIGIN", "https://chat.example.com")
     assert ChannelSettings.from_env().public_origin == "https://chat.example.com"
+
+
+def test_widget_settings_link_the_demo_page_only_for_the_demo_widget(sessions, monkeypatch):
+    monkeypatch.setenv("SOURCED_PUBLIC_ORIGIN", HOSTED)
+    monkeypatch.setenv("SOURCED_PREVIEW_SECRET", "synthetic-preview-key-for-test-only-0000")
+    monkeypatch.setenv("SOURCED_DEMO_ADMIN_EMAIL", "demo@example.com")
+    monkeypatch.delenv("SOURCED_DEMO_SITE_KEY", raising=False)
+    key = seed(sessions, "demo@example.com", PASSWORD, "offline")
+    with client() as browser:
+        assert browser.post(API + "/auth/login", json={"email": "demo@example.com", "password": PASSWORD}).status_code == 200
+        created = browser.post(API + "/widgets", headers=csrf(browser), json={"name": "Another widget", "provider": "offline"})
+        assert created.status_code == 201
+        widgets = {item["site_key"]: item for item in browser.get(API + "/widgets").json()}
+        assert widgets[key]["demo_url"] == HOSTED + "/demo/"
+        assert widgets[key]["hosted_url"] == f"{HOSTED}/c/{key}"
+        assert widgets[created.json()["site_key"]]["demo_url"] is None

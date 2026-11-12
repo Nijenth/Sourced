@@ -13,7 +13,7 @@ test('signed-in hosted chat consumes and clears its fragment and requires a bear
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await page.getByRole('link', { name: 'Website widget' }).click()
   await expect(page.getByRole('radio', { name: /Only people signed in/ })).toBeChecked()
-  await expect(page.getByRole('link', { name: 'Open hosted chat' })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Open hosted chat/ })).toBeVisible()
   if (process.env.SOURCED_E2E_WIDGET_SCREENSHOTS === '1') {
     await page.evaluate(() => document.fonts.ready)
     await page.screenshot({ path: resolve('screenshots', 'widget-settings-signed-in.png'), fullPage: true, animations: 'disabled' })

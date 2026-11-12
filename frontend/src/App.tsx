@@ -114,8 +114,8 @@ export function App() {
   return <div className="layout">
     <a href="#main" className="skip-link">Skip to content</a>
     <aside className="sidebar">
-      <Brand />
-      <div className="workspace"><span>Workspace</span><strong>{member.workspace_name}</strong></div>
+      <Link to="/documents" className="brand-link" aria-label="Sourced home"><Brand /></Link>
+      <p className="workspace"><span>Workspace</span><strong>{member.workspace_name}</strong></p>
       <nav aria-label="Admin">
         {navigation.map(({ href, label, Icon }) => <NavLink key={href} to={href}>
           <Icon size={18} aria-hidden="true" />{label}

@@ -22,14 +22,14 @@ from .channels import client_ip, public_settings, refund_failed_question, reserv
 from .common import resolve_provider
 from .errors import provider_failure
 from .db import Db
-from .db.models import Document, Membership, User, Widget
+from .db.models import Document, Widget
 from .documents import page_png
 from .schemas import ChatResponse, PublicChatRequest
 from .store import KeywordSearchLimit, PgVectorStore
 from .usage import record_answer
 from .widget_assets import ASSET_PREFIX, ROOT, page_headers, script_tag
 from .widget_sessions import PresentedSession, bearer, unauthorized
-from .seed_demo import DEMO_WIDGET_NAME, demo_admin_email
+from .demo import demo_site_key
 from .widgets import document_ids
 
 api = APIRouter(prefix="/api/v1/public", tags=["public"])
@@ -267,23 +267,6 @@ def hosted(site_key: str, request: Request, db: Db) -> HTMLResponse:
         '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>Sourced chat</title><link rel="stylesheet" href="{ASSET_PREFIX}/widget.css"><body class="sourced-hosted">{tag}</body></html>',
         headers=page_headers(settings.public_origin, hosted=True),
-    )
-
-
-def demo_site_key(db: Db) -> str | None:
-    """The demo widget: SOURCED_DEMO_SITE_KEY, or the seeded demo widget of SOURCED_DEMO_ADMIN_EMAIL's workspace."""
-    key = environ.get("SOURCED_DEMO_SITE_KEY")
-    if key:
-        return key
-    email = demo_admin_email()
-    if email is None:
-        return None
-    return db.scalar(
-        select(Widget.site_key)
-        .join(Membership, (Membership.workspace_id == Widget.workspace_id) & (Membership.role == "admin"))
-        .join(User, User.id == Membership.user_id)
-        .where(User.email == email, Widget.name == DEMO_WIDGET_NAME, Widget.access_mode == "public")
-        .order_by(Widget.created_at).limit(1)
     )
 
 

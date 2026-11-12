@@ -56,10 +56,16 @@ class CodedHTTPException(HTTPException):
         self.code = code
 
 
+def log_summary(exc: BaseException) -> str:
+    """The engine's friendly message, safe for logs: it names the provider and the problem but is built from
+    templates (rag.providers.base.friendly_error), never from raw provider responses or keys."""
+    return " ".join(str(exc).split())[:300]
+
+
 def provider_failure(exc: BaseException, *, public: bool = False) -> CodedHTTPException:
     code = provider_error_code(exc)
-    # The class name and code are enough to investigate; the request ID ties the line to the response.
-    logger.warning("Provider operation failed (%s, %s).", code, type(exc).__name__)
+    # Clients get a fixed message; the log line says which provider failed and how, for the operator.
+    logger.warning("Provider operation failed (%s): %s", code, log_summary(exc))
     messages = PUBLIC_MESSAGES if public else ADMIN_MESSAGES
     headers = {"Retry-After": "60"} if code == RATE_LIMITED else None
     return CodedHTTPException(503, code, messages[code], headers)
