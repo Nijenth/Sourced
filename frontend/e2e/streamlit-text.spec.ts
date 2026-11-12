@@ -25,6 +25,13 @@ test('untrusted text renders literally, with nothing clickable', async ({ page }
   for (const field of FIELDS) expect(shown).toContain(`${field} ${HOSTILE}`)
   expect(shown).toContain(`Why: REASON ${HOSTILE}`)
   expect(shown).toContain(`Searched for: “SEARCHED ${HOSTILE}”`)
+  // Spaces and line breaks survive, both in the page and in what a reader selects and copies.
+  const spacing = 'SPACING  two spaces,   three spaces,\n  an indented second line\n\nand a blank line before this one'
+  expect(shown).toContain(spacing)
+  const block = main.locator('.sourced-text', { hasText: 'SPACING' })
+  expect(await block.innerText()).toBe(spacing)
+  await block.selectText()
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(spacing)
   // Labels that Streamlit parses as Markdown are fixed text.
   await expect(main.locator('summary', { hasText: 'Source 1 · page 6' })).toHaveCount(1)
   await expect(main.locator('summary', { hasText: 'Passage 1 · page 2' })).toHaveCount(1)

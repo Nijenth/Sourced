@@ -154,8 +154,9 @@ def show(text: str, kind: str = "body") -> None:
     """Show untrusted text exactly as written: escaped HTML is plain text, so there is no Markdown, no
     formatting and nothing for Streamlit to turn into a link (security reviews S03, N03, N08). What a
     reader copies is exactly the original text."""
-    body = html.escape(str(text)).replace("\n", "<br>")
-    st.html(f'<div class="sourced-text" style="white-space:normal;line-height:1.6;{_TEXT_STYLES[kind]}">{body}</div>')
+    # pre-wrap keeps every space and line break as written, while long lines still wrap.
+    st.html(f'<div class="sourced-text" style="white-space:pre-wrap;line-height:1.6;{_TEXT_STYLES[kind]}">'
+            f"{html.escape(str(text))}</div>")
 
 
 def take_daily_slot() -> bool:

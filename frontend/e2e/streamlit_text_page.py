@@ -41,4 +41,5 @@ app["render_answer"]({
 }, 1, {})
 app["show"]("WARNING " + HOSTILE, "warning")
 app["show"]("PROMPT " + HOSTILE)
+app["show"]("SPACING  two spaces,   three spaces,\n  an indented second line\n\nand a blank line before this one")
 st.caption("END OF PAGE")
